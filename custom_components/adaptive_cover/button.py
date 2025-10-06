@@ -75,7 +75,7 @@ class AdaptiveCoverButton(
     @property
     def name(self):
         """Name of the entity."""
-        return f"{self._button_name} {self._name}"
+        return f"{self._button_name}"
 
     async def async_press(self) -> None:
         """Handle the button press."""

@@ -92,7 +92,7 @@ class AdaptiveCoverBinarySensor(
     @property
     def name(self):
         """Name of the entity."""
-        return f"{self._binary_name} {self._name}"
+        return f"{self._binary_name}"
 
     @property
     def is_on(self) -> bool:
