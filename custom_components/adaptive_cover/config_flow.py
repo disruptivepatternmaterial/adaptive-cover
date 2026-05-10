@@ -881,10 +881,21 @@ class OptionsFlowHandler(OptionsFlow):
             if self.options.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
             return await self._update_options()
+
+        # Migrate legacy window_entity (single string) -> list for the
+        # multi-select widget. Without this, voluptuous rejects the
+        # pre-filled value with "Value should be a list".
+        suggested = dict(user_input or self.options)
+        legacy_window = suggested.get(CONF_WINDOW_ENTITY)
+        if isinstance(legacy_window, str):
+            suggested[CONF_WINDOW_ENTITY] = [legacy_window] if legacy_window else []
+        elif legacy_window is None:
+            suggested[CONF_WINDOW_ENTITY] = []
+
         return self.async_show_form(
             step_id="climate",
             data_schema=self.add_suggested_values_to_schema(
-                CLIMATE_OPTIONS, user_input or self.options
+                CLIMATE_OPTIONS, suggested
             ),
         )
 
