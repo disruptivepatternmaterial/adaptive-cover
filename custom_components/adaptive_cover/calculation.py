@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import state_attr
 from numpy import cos, sin, tan
 from numpy import radians as rad
 
@@ -262,7 +261,8 @@ class ClimateCoverData:
                 self.outside_entity,
             )
         elif self.weather_entity:
-            temp = state_attr(self.hass, self.weather_entity, "temperature")
+            state = self.hass.states.get(self.weather_entity)
+            temp = state.attributes.get("temperature") if state else None
         return temp
 
     @property
@@ -275,7 +275,8 @@ class ClimateCoverData:
                     self.temp_entity,
                 )
             else:
-                temp = state_attr(self.hass, self.temp_entity, "current_temperature")
+                state = self.hass.states.get(self.temp_entity)
+                temp = state.attributes.get("current_temperature") if state else None
             return temp
 
     @property
