@@ -641,9 +641,11 @@ class OptionsFlowHandler(OptionsFlow):
     """Options to adjust parameters."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        # super().__init__(config_entry)
-        self.config_entry = config_entry
+        """Initialize options flow.
+
+        Do NOT assign self.config_entry — in HA 2024.12+ it is a read-only
+        property on OptionsFlow, set automatically by the flow manager.
+        """
         self.current_config: dict = dict(config_entry.data)
         self.options = dict(config_entry.options)
         self.sensor_type: SensorType = (
