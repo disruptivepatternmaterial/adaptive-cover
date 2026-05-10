@@ -253,32 +253,19 @@ class ClimateCoverData:
 
     @property
     def outside_temperature(self):
-        """Get outside temperature and today's max forecast (side-effect)."""
-        temp = None
+        """Get outside temperature (current).
+
+        Today's forecast high is no longer parsed here. The HA `forecast`
+        state attribute was removed in HA 2024.4. The coordinator now calls
+        the `weather.get_forecasts` service and injects the value as
+        `self.max_forecast_temp` before `is_summer` is evaluated.
+        """
         if self.outside_entity:
-            temp = get_safe_state(
-                self.hass,
-                self.outside_entity,
-            )
-            self.max_forecast_temp = float(temp) if temp else None
-        elif self.weather_entity:
+            return get_safe_state(self.hass, self.outside_entity)
+        if self.weather_entity:
             state = self.hass.states.get(self.weather_entity)
-            temp = state.attributes.get("temperature") if state else None
-            forecast_data = state.attributes.get("forecast") if state else None
-            if (
-                forecast_data
-                and isinstance(forecast_data, list)
-                and len(forecast_data) > 0
-            ):
-                forecast_temp = forecast_data[0].get("temperature")
-                self.max_forecast_temp = (
-                    float(forecast_temp)
-                    if forecast_temp is not None
-                    else (float(temp) if temp is not None else None)
-                )
-            else:
-                self.max_forecast_temp = float(temp) if temp is not None else None
-        return temp
+            return state.attributes.get("temperature") if state else None
+        return None
 
     @property
     def inside_temperature(self):
@@ -353,9 +340,6 @@ class ClimateCoverData:
             return False
 
         already_hot_inside = self.get_current_temperature > self.temp_high
-
-        # Force outside_temperature evaluation so max_forecast_temp is populated.
-        _ = self.outside_temperature
 
         predictive_heat = False
         max_forecast = getattr(self, "max_forecast_temp", None)

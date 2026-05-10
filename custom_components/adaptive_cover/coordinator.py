@@ -169,6 +169,74 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         self._cached_options = None
 
+        self._max_forecast_temp: float | None = None
+
+    async def _async_update_forecast_max(self, weather_entity: str | None) -> None:
+        """Fetch today's max temperature via the weather.get_forecasts service.
+
+        HA removed the `forecast` state attribute in 2024.4; the only
+        supported access path is the `weather.get_forecasts` service.
+        Tries daily first, falls back to twice_daily (selecting today's
+        daytime entry). On any failure or absence the cached value is
+        cleared to None so predictive_heat does not silently use stale data.
+        """
+        self._max_forecast_temp = None
+        if not weather_entity:
+            return
+        if self.hass.states.get(weather_entity) is None:
+            return
+
+        for forecast_type in ("daily", "twice_daily"):
+            try:
+                response = await self.hass.services.async_call(
+                    "weather",
+                    "get_forecasts",
+                    {"type": forecast_type},
+                    target={"entity_id": weather_entity},
+                    blocking=True,
+                    return_response=True,
+                )
+            except Exception as err:  # noqa: BLE001
+                self.logger.debug(
+                    "weather.get_forecasts(%s) for %s failed: %s",
+                    forecast_type,
+                    weather_entity,
+                    err,
+                )
+                continue
+
+            entity_data = (response or {}).get(weather_entity) or {}
+            forecasts = entity_data.get("forecast") or []
+            if not forecasts:
+                continue
+
+            today_entry = forecasts[0]
+            if forecast_type == "twice_daily":
+                today_iso = dt.datetime.now().date().isoformat()
+                day_entries = [
+                    f
+                    for f in forecasts
+                    if str(f.get("datetime", "")).startswith(today_iso)
+                    and f.get("is_daytime", True)
+                ]
+                if day_entries:
+                    today_entry = day_entries[0]
+
+            temp_high = today_entry.get("temperature")
+            if temp_high is not None:
+                try:
+                    self._max_forecast_temp = float(temp_high)
+                except (TypeError, ValueError):
+                    self._max_forecast_temp = None
+                    continue
+                self.logger.debug(
+                    "Forecast high from %s (%s): %s",
+                    weather_entity,
+                    forecast_type,
+                    self._max_forecast_temp,
+                )
+                return
+
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
         self.first_refresh = True
@@ -284,6 +352,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Access climate data if climate mode is enabled
         if self._climate_mode:
+            await self._async_update_forecast_max(options.get(CONF_WEATHER_ENTITY))
             self.climate_mode_data(options, cover_data)
         else:
             self.logger.debug("Control method is %s", self.control_method)
@@ -726,6 +795,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def climate_mode_data(self, options, cover_data):
         """Update climate mode data and control method."""
         climate = ClimateCoverData(*self.get_climate_data(options))
+        climate.max_forecast_temp = self._max_forecast_temp
         self.climate_state = round(ClimateCoverState(cover_data, climate).get_state())
         climate_data = ClimateCoverState(cover_data, climate).climate_data
         if climate_data.is_summer and self.switch_mode:
