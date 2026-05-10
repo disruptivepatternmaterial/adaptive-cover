@@ -10,6 +10,7 @@ from homeassistant.helpers.event import (
 )
 
 from .const import (
+    CONF_CLOUD_COVERAGE_ENTITY,
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_PRESENCE_ENTITY,
@@ -49,7 +50,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
     _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
-    _window_entity = entry.options.get(CONF_WINDOW_ENTITY)
+    _cloud_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
+    # window_entity may be a string (legacy single) or list (multi-select).
+    _raw_window = entry.options.get(CONF_WINDOW_ENTITY) or []
+    _window_entities = [_raw_window] if isinstance(_raw_window, str) else list(_raw_window)
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _entities = ["sun.sun"]
@@ -57,11 +61,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _temp_entity,
         _presence_entity,
         _weather_entity,
-        _window_entity,
+        _cloud_entity,
         _end_time_entity,
     ]:
         if entity is not None:
             _entities.append(entity)
+    _entities.extend(e for e in _window_entities if e)
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 

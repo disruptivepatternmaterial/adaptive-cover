@@ -250,6 +250,7 @@ class ClimateCoverData:
     temp_summer_outside: float
     _use_lux: bool
     _use_irradiance: bool
+    cloud_coverage_entity: str | None = None
 
     @property
     def outside_temperature(self):
@@ -362,30 +363,54 @@ class ClimateCoverData:
 
     @property
     def is_sunny(self) -> bool:
-        """Check if there is sun available, with cloud-coverage deadband."""
-        if self.weather_entity is None:
-            self.logger.debug("is_sunny(): No weather entity defined")
+        """Check if there is sun available, with cloud-coverage deadband.
+
+        Cloud-coverage source priority:
+          1. Dedicated `cloud_coverage_entity` (a numeric sensor, e.g.
+             `sensor.openweathermap_cloud_coverage`). Use this when the
+             primary weather entity doesn't expose `cloud_coverage`
+             (e.g. WeatherFlow Tempest).
+          2. `weather_entity`'s `cloud_coverage` state attribute
+             (works on OpenWeatherMap, Met.no, etc).
+          3. Fall back to the legacy weather-state-string match.
+        """
+        if self.weather_entity is None and not self.cloud_coverage_entity:
+            self.logger.debug("is_sunny(): no weather/cloud source defined")
             return True
 
-        weather_state = get_safe_state(self.hass, self.weather_entity)
-
-        # Cloud-coverage deadband: above 65% = overcast, below 35% = sunny,
-        # in between defer to the legacy weather-state-string check.
-        state_obj = self.hass.states.get(self.weather_entity)
-        cloud_coverage = (
-            state_obj.attributes.get("cloud_coverage") if state_obj else None
+        weather_state = (
+            get_safe_state(self.hass, self.weather_entity)
+            if self.weather_entity
+            else None
         )
+
+        cloud_coverage = None
+        cloud_source = None
+        if self.cloud_coverage_entity:
+            cloud_coverage = get_safe_state(self.hass, self.cloud_coverage_entity)
+            cloud_source = self.cloud_coverage_entity
+        if cloud_coverage is None and self.weather_entity:
+            state_obj = self.hass.states.get(self.weather_entity)
+            cloud_coverage = (
+                state_obj.attributes.get("cloud_coverage") if state_obj else None
+            )
+            cloud_source = f"{self.weather_entity}.cloud_coverage"
+
         if cloud_coverage is not None:
             try:
                 clouds = float(cloud_coverage)
                 if clouds > 65:
                     self.logger.debug(
-                        "is_sunny(): cloud_coverage=%s%% > 65 -> not sunny", clouds
+                        "is_sunny(): cloud=%s%% from %s > 65 -> not sunny",
+                        clouds,
+                        cloud_source,
                     )
                     return False
                 if clouds < 35:
                     self.logger.debug(
-                        "is_sunny(): cloud_coverage=%s%% < 35 -> sunny", clouds
+                        "is_sunny(): cloud=%s%% from %s < 35 -> sunny",
+                        clouds,
+                        cloud_source,
                     )
                     return True
                 # 35-65 deadband: fall through to legacy weather-state match.

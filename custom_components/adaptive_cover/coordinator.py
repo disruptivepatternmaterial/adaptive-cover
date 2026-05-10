@@ -96,6 +96,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_ENTITY,
+    CONF_CLOUD_COVERAGE_ENTITY,
     DOMAIN,
     LOGGER,
 )
@@ -510,12 +511,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def is_window_open(self) -> bool:
-        """Return True if the configured window/door binary_sensor reports open."""
-        entity_id = getattr(self, "window_entity", None)
-        if not entity_id:
-            return False
-        state = self.hass.states.get(entity_id)
-        return state is not None and state.state == "on"
+        """Return True if ANY configured window/door binary_sensor reports open.
+
+        A room often has multiple openings (e.g. two windows + a door); if any
+        of them is open we want the covers to drive to max, not freeze.
+        """
+        for entity_id in getattr(self, "window_entities", []) or []:
+            state = self.hass.states.get(entity_id)
+            if state is not None and state.state == "on":
+                return True
+        return False
 
     def _window_open_target(self, options) -> int:
         """Position to drive covers to when window is open.
@@ -534,8 +539,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Drive every cover in this entry to the window-open target."""
         target = self._window_open_target(options)
         self.logger.debug(
-            "Window is open on %s; driving covers to %s",
-            self.window_entity,
+            "Window open on one of %s; driving covers to %s",
+            getattr(self, "window_entities", []),
             target,
         )
         for cover in self.entities:
@@ -571,7 +576,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _update_options(self, options):
         """Update options."""
         self.entities = options.get(CONF_ENTITIES, [])
-        self.window_entity = options.get(CONF_WINDOW_ENTITY)
+        # window_entity may be a single string (legacy single-select) or a list
+        # (modern multi-select). Always normalize to a list so the rest of the
+        # coordinator can treat them uniformly.
+        raw_window = options.get(CONF_WINDOW_ENTITY) or []
+        if isinstance(raw_window, str):
+            self.window_entities = [raw_window]
+        else:
+            self.window_entities = list(raw_window)
         self.min_change = options.get(CONF_DELTA_POSITION, 1)
         self.time_threshold = options.get(CONF_DELTA_TIME, 2)
         self.start_time = options.get(CONF_START_TIME)
@@ -790,6 +802,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             options.get(CONF_OUTSIDE_THRESHOLD),
             self._lux_toggle,
             self._irradiance_toggle,
+            options.get(CONF_CLOUD_COVERAGE_ENTITY),
         ]
 
     def climate_mode_data(self, options, cover_data):

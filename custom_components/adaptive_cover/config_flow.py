@@ -70,6 +70,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_ENTITY,
+    CONF_CLOUD_COVERAGE_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     DOMAIN,
     SensorType,
@@ -277,9 +278,14 @@ CLIMATE_OPTIONS = vol.Schema(
             selector.EntityFilterSelectorConfig(domain="weather")
         ),
         vol.Optional(
-            CONF_WINDOW_ENTITY, default=vol.UNDEFINED
+            CONF_CLOUD_COVERAGE_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(domain="binary_sensor")
+            selector.EntityFilterSelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_WINDOW_ENTITY, default=[]): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(
+                domain="binary_sensor", multiple=True
+            )
         ),
     }
 )
@@ -865,6 +871,7 @@ class OptionsFlowHandler(OptionsFlow):
             entities = [
                 CONF_OUTSIDETEMP_ENTITY,
                 CONF_WEATHER_ENTITY,
+                CONF_CLOUD_COVERAGE_ENTITY,
                 CONF_PRESENCE_ENTITY,
                 CONF_LUX_ENTITY,
                 CONF_IRRADIANCE_ENTITY,
