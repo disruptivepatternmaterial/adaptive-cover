@@ -80,6 +80,7 @@
           "temp_entity": "Inside temperature entity",
           "presence_entity": "Presence entity (optional)",
           "weather_entity": "Weather entity (optional)",
+          "window_entity": "Window/door open sensor (optional)",
           "outside_temp": "Outside temperature sensor (optional)",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
@@ -93,6 +94,7 @@
         "data_description": {
           "presence_entity": "Entity representing room or home presence status",
           "weather_entity": "Monitors weather conditions, and outside temperature",
+          "window_entity": "Binary sensor that reports 'on' when a window or door is open. When on, covers in this entry are driven to the maximum (open) position.",
           "outside_temp": "Overrides outside temperature from weather entity if both are set",
           "temp_low": "Minimum comfortable temperature",
           "temp_high": "Maximum comfortable temperature",
@@ -313,6 +315,7 @@
           "temp_entity": "Inside temperature entity",
           "presence_entity": "Presence entity (optional)",
           "weather_entity": "Weather entity (optional)",
+          "window_entity": "Window/door open sensor (optional)",
           "outside_temp": "Outside temperature sensor (optional)",
           "temp_low": "Low temperature threshold",
           "temp_high": "High temperature threshold",
@@ -326,6 +329,7 @@
         "data_description": {
           "presence_entity": "Entity representing room or home presence status",
           "weather_entity": "Monitors weather conditions, and outside temperature",
+          "window_entity": "Binary sensor that reports 'on' when a window or door is open. When on, covers in this entry are driven to the maximum (open) position.",
           "outside_temp": "Overrides outside temperature from weather entity if both are set",
           "temp_low": "Minimum comfortable temperature",
           "temp_high": "Maximum comfortable temperature",
@@ -475,6 +479,36 @@
       "options": {
         "mode1": "single direction (0% = closed / 100% = open)",
         "mode2": "bi-directional (0% = closed / 50% = open / 100% = closed)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "algorithm_status": {
+        "name": "Algorithm Status",
+        "state": {
+          "auto": "Automatic",
+          "window_open": "Window/door open",
+          "max_limit": "Max position limit",
+          "min_limit": "Min position limit",
+          "night_mode": "Night mode",
+          "sun_shadow": "Sun out of view",
+          "calculating": "Calculating"
+        }
+      }
+    },
+    "select": {
+      "manual_override": {
+        "name": "Manual override duration",
+        "state": {
+          "none": "Disabled",
+          "15_min": "15 minutes",
+          "30_min": "30 minutes",
+          "60_min": "60 minutes",
+          "120_min": "2 hours",
+          "240_min": "4 hours",
+          "sunset": "Until sunset"
+        }
       }
     }
   }

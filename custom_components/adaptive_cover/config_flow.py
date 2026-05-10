@@ -69,6 +69,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    CONF_WINDOW_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
     DOMAIN,
     SensorType,
@@ -274,6 +275,11 @@ CLIMATE_OPTIONS = vol.Schema(
             CONF_WEATHER_ENTITY, default=vol.UNDEFINED
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain="weather")
+        ),
+        vol.Optional(
+            CONF_WINDOW_ENTITY, default=vol.UNDEFINED
+        ): selector.EntitySelector(
+            selector.EntityFilterSelectorConfig(domain="binary_sensor")
         ),
     }
 )

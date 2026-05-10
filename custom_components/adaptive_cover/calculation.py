@@ -253,16 +253,31 @@ class ClimateCoverData:
 
     @property
     def outside_temperature(self):
-        """Get outside temperature."""
+        """Get outside temperature and today's max forecast (side-effect)."""
         temp = None
         if self.outside_entity:
             temp = get_safe_state(
                 self.hass,
                 self.outside_entity,
             )
+            self.max_forecast_temp = float(temp) if temp else None
         elif self.weather_entity:
             state = self.hass.states.get(self.weather_entity)
             temp = state.attributes.get("temperature") if state else None
+            forecast_data = state.attributes.get("forecast") if state else None
+            if (
+                forecast_data
+                and isinstance(forecast_data, list)
+                and len(forecast_data) > 0
+            ):
+                forecast_temp = forecast_data[0].get("temperature")
+                self.max_forecast_temp = (
+                    float(forecast_temp)
+                    if forecast_temp is not None
+                    else (float(temp) if temp is not None else None)
+                )
+            else:
+                self.max_forecast_temp = float(temp) if temp is not None else None
         return temp
 
     @property
@@ -333,16 +348,29 @@ class ClimateCoverData:
 
     @property
     def is_summer(self) -> bool:
-        """Check if temperature is over threshold."""
-        if self.temp_high is not None and self.get_current_temperature is not None:
-            is_it = self.get_current_temperature > self.temp_high and self.outside_high
-        else:
-            is_it = False
+        """Check if room is hot now or forecast predicts heat above threshold."""
+        if self.temp_high is None or self.get_current_temperature is None:
+            return False
+
+        already_hot_inside = self.get_current_temperature > self.temp_high
+
+        # Force outside_temperature evaluation so max_forecast_temp is populated.
+        _ = self.outside_temperature
+
+        predictive_heat = False
+        max_forecast = getattr(self, "max_forecast_temp", None)
+        if max_forecast is not None and self.temp_summer_outside is not None:
+            predictive_heat = max_forecast > (self.temp_summer_outside + 2.0)
+
+        is_it = (already_hot_inside or predictive_heat) and self.outside_high
 
         self.logger.debug(
-            "is_summer(): current_temp > temp_high and outside_high?: %s > %s and %s = %s",
-            self.get_current_temperature,
-            self.temp_high,
+            "is_summer(): already_hot_inside=%s predictive_heat=%s "
+            "(max_forecast=%s, summer_outside_threshold=%s) outside_high=%s -> %s",
+            already_hot_inside,
+            predictive_heat,
+            max_forecast,
+            self.temp_summer_outside,
             self.outside_high,
             is_it,
         )
@@ -350,17 +378,45 @@ class ClimateCoverData:
 
     @property
     def is_sunny(self) -> bool:
-        """Check if condition can contain radiation in winter."""
-        weather_state = None
-        if self.weather_entity is not None:
-            weather_state = get_safe_state(self.hass, self.weather_entity)
-        else:
+        """Check if there is sun available, with cloud-coverage deadband."""
+        if self.weather_entity is None:
             self.logger.debug("is_sunny(): No weather entity defined")
             return True
+
+        weather_state = get_safe_state(self.hass, self.weather_entity)
+
+        # Cloud-coverage deadband: above 65% = overcast, below 35% = sunny,
+        # in between defer to the legacy weather-state-string check.
+        state_obj = self.hass.states.get(self.weather_entity)
+        cloud_coverage = (
+            state_obj.attributes.get("cloud_coverage") if state_obj else None
+        )
+        if cloud_coverage is not None:
+            try:
+                clouds = float(cloud_coverage)
+                if clouds > 65:
+                    self.logger.debug(
+                        "is_sunny(): cloud_coverage=%s%% > 65 -> not sunny", clouds
+                    )
+                    return False
+                if clouds < 35:
+                    self.logger.debug(
+                        "is_sunny(): cloud_coverage=%s%% < 35 -> sunny", clouds
+                    )
+                    return True
+                # 35-65 deadband: fall through to legacy weather-state match.
+            except (ValueError, TypeError):
+                pass
+
         if self.weather_condition is not None:
             matches = weather_state in self.weather_condition
-            self.logger.debug("is_sunny(): Weather: %s = %s", weather_state, matches)
+            self.logger.debug(
+                "is_sunny(): weather=%s in condition list -> %s",
+                weather_state,
+                matches,
+            )
             return matches
+        return True
 
     @property
     def lux(self) -> bool:

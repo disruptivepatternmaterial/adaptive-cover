@@ -95,6 +95,7 @@ from .const import (
     CONF_TRANSPARENT_BLIND,
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
+    CONF_WINDOW_ENTITY,
     DOMAIN,
     LOGGER,
 )
@@ -341,6 +342,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "sun_motion": normal_cover.valid,
                 "manual_override": self.manager.binary_cover_manual,
                 "manual_list": self.manager.manual_controlled,
+                "explanation": "window_open" if self.is_window_open else "auto",
             },
             attributes={
                 "default": options.get(CONF_DEFAULT_HEIGHT),
@@ -381,6 +383,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_first_refresh(self, state: int, options):
         """Handle first refresh."""
+        if self.is_window_open:
+            await self._async_drive_to_max_open(options)
+            self.first_refresh = False
+            return
         if self.control_toggle:
             for cover in self.entities:
                 if (
@@ -396,6 +402,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_timed_refresh(self, options):
         """Handle timed refresh."""
+        if self.is_window_open:
+            await self._async_drive_to_max_open(options)
+            self.timed_refresh = False
+            return
         self.logger.debug(
             "This is a timed refresh, using sunset position: %s",
             options.get(CONF_SUNSET_POS),
@@ -417,6 +427,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_call_service(self, entity, state: int, options):
         """Handle call service."""
+        if self.is_window_open:
+            target = self._window_open_target(options)
+            await self.async_set_manual_position(entity, target)
+            return
         if (
             self.check_adaptive_time
             and self.check_position_delta(entity, state, options)
@@ -424,6 +438,39 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             and not self.manager.is_cover_manual(entity)
         ):
             await self.async_set_position(entity, state)
+
+    @property
+    def is_window_open(self) -> bool:
+        """Return True if the configured window/door binary_sensor reports open."""
+        entity_id = getattr(self, "window_entity", None)
+        if not entity_id:
+            return False
+        state = self.hass.states.get(entity_id)
+        return state is not None and state.state == "on"
+
+    def _window_open_target(self, options) -> int:
+        """Position to drive covers to when window is open.
+
+        Uses the configured max position if apply_max_position is enabled,
+        otherwise drives fully open (100). Honors inverse_state.
+        """
+        max_pos = options.get(CONF_MAX_POSITION)
+        apply_max = options.get(CONF_ENABLE_MAX_POSITION, False)
+        target = max_pos if apply_max and max_pos is not None else 100
+        if self._inverse_state:
+            target = inverse_state(target)
+        return target
+
+    async def _async_drive_to_max_open(self, options) -> None:
+        """Drive every cover in this entry to the window-open target."""
+        target = self._window_open_target(options)
+        self.logger.debug(
+            "Window is open on %s; driving covers to %s",
+            self.window_entity,
+            target,
+        )
+        for cover in self.entities:
+            await self.async_set_manual_position(cover, target)
 
     async def async_set_position(self, entity, state: int):
         """Call service to set cover position."""
@@ -455,6 +502,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def _update_options(self, options):
         """Update options."""
         self.entities = options.get(CONF_ENTITIES, [])
+        self.window_entity = options.get(CONF_WINDOW_ENTITY)
         self.min_change = options.get(CONF_DELTA_POSITION, 1)
         self.time_threshold = options.get(CONF_DELTA_TIME, 2)
         self.start_time = options.get(CONF_START_TIME)

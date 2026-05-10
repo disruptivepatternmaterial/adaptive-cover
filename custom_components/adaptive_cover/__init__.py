@@ -15,12 +15,19 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
+    CONF_WINDOW_ENTITY,
     DOMAIN,
     _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.SELECT,
+]
 CONF_SUN = ["sun.sun"]
 
 
@@ -42,10 +49,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
     _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
+    _window_entity = entry.options.get(CONF_WINDOW_ENTITY)
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _entities = ["sun.sun"]
-    for entity in [_temp_entity, _presence_entity, _weather_entity, _end_time_entity]:
+    for entity in [
+        _temp_entity,
+        _presence_entity,
+        _weather_entity,
+        _window_entity,
+        _end_time_entity,
+    ]:
         if entity is not None:
             _entities.append(entity)
 
