@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -96,7 +97,9 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_ENTITY,
+    CONF_WINDOW_OPEN_HOLD,
     CONF_CLOUD_COVERAGE_ENTITY,
+    DEFAULT_WINDOW_OPEN_HOLD,
     DOMAIN,
     LOGGER,
 )
@@ -171,6 +174,16 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cached_options = None
 
         self._max_forecast_temp: float | None = None
+
+        # Window-open latch: monotonic timestamp of the most recent moment any
+        # configured window/door binary_sensor reported "on". Used by
+        # is_window_open to keep the cover at max for `window_open_hold`
+        # seconds after the sensor flips back to "off", which protects
+        # against flaky contact sensors that briefly report closed while the
+        # door is physically open. Set to None until the sensor has been
+        # seen "on" at least once.
+        self._last_window_open_ts: float | None = None
+        self.window_open_hold: int = DEFAULT_WINDOW_OPEN_HOLD
 
     async def _async_update_forecast_max(self, weather_entity: str | None) -> None:
         """Fetch today's max temperature via the weather.get_forecasts service.
@@ -268,6 +281,46 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     ) -> None:
         """Fetch and process state change event."""
         self.logger.debug("Entity state change")
+        data = event.data
+        entity_id = data.get("entity_id")
+        new_state = data.get("new_state")
+        old_state = data.get("old_state")
+        # If a tracked window/door just transitioned on -> off, the
+        # is_window_open latch will hold "open" for window_open_hold
+        # seconds. Schedule a one-shot refresh just after that hold
+        # expires so the cover can release back to the calculated
+        # position; without this, nothing would prompt the coordinator
+        # to re-evaluate until the next sun-tracking refresh.
+        if (
+            self.window_open_hold > 0
+            and entity_id in (getattr(self, "window_entities", []) or [])
+            and new_state is not None
+            and new_state.state == "off"
+            and old_state is not None
+            and old_state.state == "on"
+        ):
+            release_at = dt.datetime.now(dt.UTC) + dt.timedelta(
+                seconds=self.window_open_hold + 1
+            )
+            self.logger.debug(
+                "Window %s on->off; scheduling latch release refresh at %s",
+                entity_id,
+                release_at,
+            )
+            async_track_point_in_time(
+                self.hass, self._async_release_window_latch, release_at
+            )
+        self.state_change = True
+        await self.async_refresh()
+
+    async def _async_release_window_latch(self, _now) -> None:
+        """One-shot refresh fired after window_open_hold elapses.
+
+        is_window_open re-evaluates on every refresh, so this just
+        prompts the coordinator to recompute and let the cover drop
+        back to its calculated position once the hold has expired.
+        """
+        self.logger.debug("Window-open latch release timer fired")
         self.state_change = True
         await self.async_refresh()
 
@@ -511,15 +564,31 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     @property
     def is_window_open(self) -> bool:
-        """Return True if ANY configured window/door binary_sensor reports open.
+        """Return True if any configured window/door is treated as open.
 
-        A room often has multiple openings (e.g. two windows + a door); if any
-        of them is open we want the covers to drive to max, not freeze.
+        Reports True when any tracked window_entity currently reads "on",
+        OR when the most recent "on" was less than `window_open_hold`
+        seconds ago. The hold latches over brief "off" flickers from
+        flaky contact sensors so the cover stays at max until the sensor
+        has been continuously "off" for the full hold window. Set
+        `window_open_hold` to 0 to disable the latch.
         """
+        now = time.monotonic()
+        any_on = False
         for entity_id in getattr(self, "window_entities", []) or []:
             state = self.hass.states.get(entity_id)
             if state is not None and state.state == "on":
-                return True
+                any_on = True
+                break
+        if any_on:
+            self._last_window_open_ts = now
+            return True
+        if (
+            self._last_window_open_ts is not None
+            and self.window_open_hold > 0
+            and (now - self._last_window_open_ts) < self.window_open_hold
+        ):
+            return True
         return False
 
     def _window_open_target(self, options) -> int:
@@ -584,6 +653,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.window_entities = [raw_window]
         else:
             self.window_entities = list(raw_window)
+        try:
+            self.window_open_hold = int(
+                options.get(CONF_WINDOW_OPEN_HOLD, DEFAULT_WINDOW_OPEN_HOLD)
+            )
+        except (TypeError, ValueError):
+            self.window_open_hold = DEFAULT_WINDOW_OPEN_HOLD
         self.min_change = options.get(CONF_DELTA_POSITION, 1)
         self.time_threshold = options.get(CONF_DELTA_TIME, 2)
         self.start_time = options.get(CONF_START_TIME)

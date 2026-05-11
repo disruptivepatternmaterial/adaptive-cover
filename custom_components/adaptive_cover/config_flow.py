@@ -70,8 +70,10 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WEATHER_STATE,
     CONF_WINDOW_ENTITY,
+    CONF_WINDOW_OPEN_HOLD,
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_OUTSIDE_THRESHOLD,
+    DEFAULT_WINDOW_OPEN_HOLD,
     DOMAIN,
     SensorType,
     CONF_MIN_POSITION,
@@ -285,6 +287,13 @@ CLIMATE_OPTIONS = vol.Schema(
         vol.Optional(CONF_WINDOW_ENTITY, default=[]): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(
                 domain="binary_sensor", multiple=True
+            )
+        ),
+        vol.Optional(
+            CONF_WINDOW_OPEN_HOLD, default=DEFAULT_WINDOW_OPEN_HOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=3600, step=10, mode="box", unit_of_measurement="s"
             )
         ),
     }
