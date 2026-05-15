@@ -466,33 +466,45 @@ class ClimateCoverState(NormalCoverState):
 
     def normal_with_presence(self) -> int:
         """Determine state for horizontal and vertical covers with occupants."""
-
         is_summer = self.climate_data.is_summer
+        is_winter = self.climate_data.is_winter
 
-        # Check if it's not summer and either lux, irradiance or sunny weather is present
+        # Winter wins regardless of brightness: if it's cold enough for the
+        # configured temp_low (per the user's Temperature Toggle source),
+        # solar gain through the window is desirable and anti-glare should
+        # not override that. This is also what the "Control Method: winter"
+        # status sensor advertises, so behavior matches the label.
+        if not is_summer and is_winter:
+            if self.cover.valid:
+                self.cover.logger.debug(
+                    "n_w_p(): winter + sun in window -> 100 for solar gain"
+                )
+                return 100
+            self.cover.logger.debug(
+                "n_w_p(): winter + sun not in window -> default (%s)",
+                self.cover.default,
+            )
+            return self.cover.default
+
+        # Not-summer + brightness gate: lux dim, irradiance dim, or overcast.
+        # is_winter is no longer checked here (it's handled above).
         if not is_summer and (
             self.climate_data.lux
             or self.climate_data.irradiance
             or not self.climate_data.is_sunny
         ):
-            # If it's winter and the cover is valid, return 100
-            if self.climate_data.is_winter and self.cover.valid:
-                self.cover.logger.debug(
-                    "n_w_p(): Winter and sun is in front of window = use 100"
-                )
-                return 100
-            # Otherwise, return the default cover state
             self.cover.logger.debug(
-                "n_w_p(): it's not summer and sunny weather is not present = use default"
+                "n_w_p(): not summer + dim/cloudy -> default (%s)",
+                self.cover.default,
             )
             return self.cover.default
 
-        # If it's summer and there's a transparent blind, return 0
+        # Summer + transparent blind: full close.
         if is_summer and self.climate_data.transparent_blind:
             return 0
 
-        # If none of the above conditions are met, get the state from the parent class
-        self.cover.logger.debug("n_w_p(): None of the climate conditions are met")
+        # Default: anti-glare geometric calc.
+        self.cover.logger.debug("n_w_p(): falling through to NormalCoverState")
         return super().get_state()
 
     def normal_without_presence(self) -> int:
