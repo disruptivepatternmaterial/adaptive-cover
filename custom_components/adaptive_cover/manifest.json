@@ -1,7 +1,7 @@
 {
   "domain": "adaptive_cover",
-  "name": "Adaptive Cover (NET fork)",
-  "codeowners": ["@basbruss"],
+  "name": "Adaptive Cover (NET Fork)",
+  "codeowners": ["@disruptivepatternmaterial"],
   "config_flow": true,
   "dependencies": [
     "sun",
@@ -11,9 +11,9 @@
     "sensor",
     "weather"
   ],
-  "documentation": "https://github.com/basbruss/adaptive-cover",
+  "documentation": "https://github.com/disruptivepatternmaterial/adaptive-cover",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/basbruss/adaptive-cover/issues",
+  "issue_tracker": "https://github.com/disruptivepatternmaterial/adaptive-cover/issues",
   "requirements": ["astral", "pandas"],
-  "version": "0.3.0b0"
+  "version": "0.3.0b1"
 }

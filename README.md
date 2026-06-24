@@ -60,7 +60,7 @@ This integration builds upon the template sensor from this forum post [Automatic
 
 ### HACS (Recommended)
 
-Add <https://github.com/basbruss/adaptive-cover> as custom repository to HACS.
+Add <https://github.com/disruptivepatternmaterial/adaptive-cover> as custom repository to HACS.
 Search and download Adaptive Cover within HACS.
 
 Restart Home-Assistant and add the integration.
