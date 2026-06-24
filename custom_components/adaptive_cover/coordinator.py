@@ -24,6 +24,7 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .config_context_adapter import ConfigContextAdapter
@@ -162,12 +163,15 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.climate_state = None
         self.control_method = "intermediate"
         self.state_change_data: StateChangedData | None = None
-        self.manager = AdaptiveCoverManager(self.manual_duration, self.logger)
+        self.manager = AdaptiveCoverManager(self.hass, self.config_entry.entry_id, self.manual_duration, self.logger)
         self.wait_for_target = {}
         self.target_call = {}
         self.ignore_intermediate_states = self.config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
         )
+        self._switches_restored: bool = False
+        self.expected_restore_ids: set[str] = set()
+        self.restored_ids: set[str] = set()
         self._update_listener = None
         self._scheduled_time = dt.datetime.now()
 
@@ -253,9 +257,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
+        await self.manager.async_load()
         self.first_refresh = True
         await super().async_config_entry_first_refresh()
         self.logger.debug("Config entry first refresh")
+
+    def set_expected_switch_ids(self, ids: set[str]) -> None:
+        """Register the set of switch unique IDs that must restore before first drive."""
+        self.expected_restore_ids = ids
+
+    def mark_switch_restored(self, unique_id: str) -> None:
+        """Record that a switch has restored its state."""
+        self.restored_ids.add(unique_id)
+        if self.expected_restore_ids and self.restored_ids >= self.expected_restore_ids:
+            self._switches_restored = True
+            self.logger.debug("All switches restored; scheduling first-drive refresh")
+            self.hass.async_create_task(self.async_refresh())
 
     async def async_timed_refresh(self, event) -> None:
         """Control state at end time."""
@@ -500,12 +517,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.manual_reset,
                 self.wait_for_target,
                 self.manual_threshold,
+                target_call=self.target_call,
             )
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
 
     async def async_handle_first_refresh(self, state: int, options):
         """Handle first refresh."""
+        if not self._switches_restored:
+            self.logger.debug(
+                "First refresh deferred: switches not yet restored"
+            )
+            return
         if self.is_window_open:
             await self._async_drive_to_max_open(options)
             self.first_refresh = False
@@ -1021,14 +1044,50 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 class AdaptiveCoverManager:
     """Track position changes."""
 
-    def __init__(self, reset_duration: dict[str:int], logger) -> None:
+    STORE_VERSION = 1
+
+    def __init__(self, hass: HomeAssistant, entry_id: str, reset_duration: dict[str, int], logger) -> None:
         """Initialize the AdaptiveCoverManager."""
         self.covers: set[str] = set()
-
         self.manual_control: dict[str, bool] = {}
         self.manual_control_time: dict[str, dt.datetime] = {}
         self.reset_duration = dt.timedelta(**reset_duration)
         self.logger = logger
+        self._hass = hass
+        self._store: Store = Store(
+            hass,
+            self.STORE_VERSION,
+            f"adaptive_cover.{entry_id}.manual_state",
+        )
+
+    async def async_load(self) -> None:
+        """Restore persisted manual state from storage."""
+        data = await self._store.async_load()
+        if not data:
+            return
+        self.manual_control = {k: bool(v) for k, v in data.get("manual_control", {}).items()}
+        raw_times = data.get("manual_control_time", {})
+        for entity_id, ts in raw_times.items():
+            try:
+                self.manual_control_time[entity_id] = dt.datetime.fromisoformat(ts)
+            except (ValueError, TypeError):
+                pass
+        self.logger.debug("Restored manual state: %s", list(self.manual_control.keys()))
+
+    def _schedule_save(self) -> None:
+        """Schedule an async save without blocking callers."""
+        self._hass.async_create_task(self._async_save())
+
+    async def _async_save(self) -> None:
+        """Persist current manual state to storage."""
+        await self._store.async_save(
+            {
+                "manual_control": dict(self.manual_control),
+                "manual_control_time": {
+                    k: v.isoformat() for k, v in self.manual_control_time.items()
+                },
+            }
+        )
 
     def add_covers(self, entity):
         """Update set with entities."""
@@ -1042,6 +1101,7 @@ class AdaptiveCoverManager:
         allow_reset,
         wait_target_call,
         manual_threshold,
+        target_call=None,
     ):
         """Process state change event."""
         event = states_data
@@ -1059,6 +1119,32 @@ class AdaptiveCoverManager:
             new_position = new_state.attributes.get("current_tilt_position")
         else:
             new_position = new_state.attributes.get("current_position")
+
+        # The integration just commanded this position; not a manual
+        # change. Without this guard, integration-initiated drives to a
+        # non-sun-tracked target (e.g. window-open at max, sunset_pos)
+        # would be misclassified as manual control because `our_state`
+        # is the sun-tracked value but `new_position` is whatever target
+        # the coordinator actually issued via `async_set_manual_position`.
+        # ZHA/Tuya covers commonly report `current_position` off the
+        # commanded target by a few percent (e.g. commanded 100,
+        # reported 99) so we allow a tolerance equal to the user-
+        # configured `manual_threshold` (the same window used below for
+        # human-vs-machine deviation), with a 5% floor when not set.
+        if target_call is not None and entity_id in target_call:
+            target = target_call.get(entity_id)
+            if target is not None:
+                tolerance = manual_threshold if manual_threshold is not None else 5
+                if abs(target - new_position) <= tolerance:
+                    self.logger.debug(
+                        "Cover %s reached integration-commanded target %s "
+                        "(reported %s, tolerance %s); skipping manual-detect",
+                        entity_id,
+                        target,
+                        new_position,
+                        tolerance,
+                    )
+                    return
 
         if new_position != our_state:
             if (
@@ -1097,6 +1183,7 @@ class AdaptiveCoverManager:
                 entity_id,
                 allow_reset,
             )
+            self._schedule_save()
         elif not allow_reset:
             self.logger.debug(
                 "Already manual control time specified for %s, reset is not allowed by user setting:%s",
@@ -1107,6 +1194,7 @@ class AdaptiveCoverManager:
     def mark_manual_control(self, cover: str) -> None:
         """Mark cover as under manual control."""
         self.manual_control[cover] = True
+        self._schedule_save()
 
     async def reset_if_needed(self):
         """Reset manual control state of the covers."""
@@ -1125,6 +1213,7 @@ class AdaptiveCoverManager:
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
         self.logger.debug("Reset manual override for %s", entity_id)
+        self._schedule_save()
 
     def is_cover_manual(self, entity_id):
         """Check if a cover is under manual control."""

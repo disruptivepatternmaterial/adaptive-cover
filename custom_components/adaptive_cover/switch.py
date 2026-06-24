@@ -105,6 +105,7 @@ async def async_setup_entry(
             switches.append(irradiance_switch)
 
     async_add_entities(switches)
+    coordinator.set_expected_switch_ids({s._attr_unique_id for s in switches})
 
 
 class AdaptiveCoverSwitch(
@@ -192,3 +193,4 @@ class AdaptiveCoverSwitch(
             await self.async_turn_on(added=True)
         else:
             await self.async_turn_off(added=True)
+        self.coordinator.mark_switch_restored(self._attr_unique_id)
