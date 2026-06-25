@@ -31,26 +31,18 @@ class SunData:
     @property
     def solar_azimuth(self) -> list:
         """Create list with solar azimuth data per 5 minutes."""
-        index = 0
-        azi_list = []
-        for _i in self.times:
-            azi_list.append(
-                self.location.solar_azimuth(self.times[index], self.elevation)
-            )
-            index += 1
-        return azi_list
+        times = self.times  # cache; self.times is a property that recomputes each call
+        return [
+            self.location.solar_azimuth(t, self.elevation) for t in times
+        ]
 
     @property
     def solar_elevation(self) -> list:
         """Create list with solar elevation data per 5 minutes."""
-        index = 0
-        ele_list = []
-        for _i in self.times:
-            ele_list.append(
-                self.location.solar_elevation(self.times[index], self.elevation)
-            )
-            index += 1
-        return ele_list
+        times = self.times  # cache; self.times is a property that recomputes each call
+        return [
+            self.location.solar_elevation(t, self.elevation) for t in times
+        ]
 
     def sunset(self) -> datetime:
         """Fetch sunset time."""

@@ -14,6 +14,7 @@ from .const import (
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_PRESENCE_ENTITY,
+    CONF_START_ENTITY,
     CONF_TEMP_ENTITY,
     CONF_WEATHER_ENTITY,
     CONF_WINDOW_ENTITY,
@@ -32,15 +33,6 @@ PLATFORMS = [
 CONF_SUN = ["sun.sun"]
 
 
-async def async_initialize_integration(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry | None = None,
-) -> bool:
-    """Initialize the integration."""
-
-    return True
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Adaptive Cover from a config entry."""
 
@@ -55,6 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _raw_window = entry.options.get(CONF_WINDOW_ENTITY) or []
     _window_entities = [_raw_window] if isinstance(_raw_window, str) else list(_raw_window)
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
+    _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)
     _entities = ["sun.sun"]
     for entity in [
@@ -62,6 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _presence_entity,
         _weather_entity,
         _cloud_entity,
+        _start_time_entity,
         _end_time_entity,
     ]:
         if entity is not None:

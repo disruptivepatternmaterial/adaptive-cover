@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import datetime as _dt
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -72,11 +73,6 @@ class AdaptiveGeneralCover(ABC):
             )
 
     @property
-    def _get_azimuth_edges(self) -> tuple[int, int]:
-        """Calculate azimuth edges."""
-        return self.fov_left + self.fov_right
-
-    @property
     def is_sun_in_blind_spot(self) -> bool:
         """Check if sun is in blind spot."""
         if (
@@ -144,10 +140,11 @@ class AdaptiveGeneralCover(ABC):
         """Determine if it is after sunset plus offset."""
         sunset = self.sun_data.sunset().replace(tzinfo=None)
         sunrise = self.sun_data.sunrise().replace(tzinfo=None)
-        after_sunset = datetime.utcnow() > (sunset + timedelta(minutes=self.sunset_off))
-        before_sunrise = datetime.utcnow() < (
-            sunrise + timedelta(minutes=self.sunrise_off)
-        )
+        # Use datetime.now(_dt.UTC) instead of the deprecated datetime.utcnow().
+        # Both sunset/sunrise have tzinfo stripped above so we compare naive UTC.
+        now_utc = datetime.now(_dt.UTC).replace(tzinfo=None)
+        after_sunset = now_utc > (sunset + timedelta(minutes=self.sunset_off))
+        before_sunrise = now_utc < (sunrise + timedelta(minutes=self.sunrise_off))
         self.logger.debug(
             "After sunset plus offset? %s", (after_sunset or before_sunrise)
         )
@@ -326,13 +323,18 @@ class ClimateCoverData:
 
     @property
     def outside_high(self) -> bool:
-        """Check if outdoor temperature is above threshold."""
+        """Check if outdoor temperature is above threshold.
+
+        Returns False (not hot enough outside) when the sensor is unavailable
+        so that a missing/offline sensor does not cause the integration to
+        assume summer conditions and unnecessarily block solar gain.
+        """
         if (
             self.temp_summer_outside is not None
             and self.outside_temperature is not None
         ):
             return float(self.outside_temperature) > self.temp_summer_outside
-        return True
+        return False
 
     @property
     def is_summer(self) -> bool:
@@ -429,22 +431,42 @@ class ClimateCoverData:
 
     @property
     def lux(self) -> bool:
-        """Get lux value and compare to threshold."""
+        """Get lux value and compare to threshold.
+
+        Returns False (not dim enough to gate) when the sensor is unavailable
+        so that an offline lux sensor does not unintentionally suppress cover
+        movement.
+        """
         if not self._use_lux:
             return False
         if self.lux_entity is not None and self.lux_threshold is not None:
             value = get_safe_state(self.hass, self.lux_entity)
-            return float(value) <= self.lux_threshold
+            if value is None:
+                return False
+            try:
+                return float(value) <= self.lux_threshold
+            except (TypeError, ValueError):
+                return False
         return False
 
     @property
     def irradiance(self) -> bool:
-        """Get irradiance value and compare to threshold."""
+        """Get irradiance value and compare to threshold.
+
+        Returns False (not low enough to gate) when the sensor is unavailable
+        so that an offline irradiance sensor does not unintentionally suppress
+        cover movement.
+        """
         if not self._use_irradiance:
             return False
         if self.irradiance_entity is not None and self.irradiance_threshold is not None:
             value = get_safe_state(self.hass, self.irradiance_entity)
-            return float(value) <= self.irradiance_threshold
+            if value is None:
+                return False
+            try:
+                return float(value) <= self.irradiance_threshold
+            except (TypeError, ValueError):
+                return False
         return False
 
 

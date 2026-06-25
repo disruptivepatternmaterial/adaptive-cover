@@ -77,6 +77,8 @@ class AdaptiveCoverButton(
         """Name of the entity."""
         return f"{self._button_name}"
 
+    _RESET_TIMEOUT_S = 30
+
     async def async_press(self) -> None:
         """Handle the button press."""
         for entity in self._entities:
@@ -85,8 +87,23 @@ class AdaptiveCoverButton(
                 await self.coordinator.async_set_position(
                     entity, self.coordinator.state
                 )
-                while self.coordinator.wait_for_target.get(entity):
+                # Wait for the cover to confirm the commanded position, but
+                # cap the wait at _RESET_TIMEOUT_S seconds so a disconnected
+                # or slow cover doesn't hang the button handler indefinitely.
+                waited = 0
+                while (
+                    self.coordinator.wait_for_target.get(entity)
+                    and waited < self._RESET_TIMEOUT_S
+                ):
                     await asyncio.sleep(1)
+                    waited += 1
+                if waited >= self._RESET_TIMEOUT_S:
+                    _LOGGER.warning(
+                        "Timed out waiting for %s to reach target position "
+                        "after %s s; resetting manual flag anyway",
+                        entity,
+                        self._RESET_TIMEOUT_S,
+                    )
                 self.coordinator.manager.reset(entity)
             else:
                 _LOGGER.debug(

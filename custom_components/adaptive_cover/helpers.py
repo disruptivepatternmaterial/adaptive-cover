@@ -29,9 +29,19 @@ def get_timedelta_str(string: str):
 
 
 def get_datetime_from_str(string: str):
-    """Convert datetime string to datetime."""
+    """Convert datetime string to a timezone-naive local datetime.
+
+    Parses the string respecting any embedded timezone information and then
+    converts to the local wall-clock time (naive), which is what the rest of
+    the coordinator uses for time comparisons.  The previous ``ignoretz=True``
+    silently discarded timezone info, which could produce off-by-offset errors
+    for users whose HA input_datetime entities return aware ISO strings.
+    """
     if string is not None:
-        return parser.parse(string, ignoretz=True)
+        parsed = parser.parse(string)
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(tz=None).replace(tzinfo=None)
+        return parsed
 
 
 def get_last_updated(entity_id: str, hass: HomeAssistant):

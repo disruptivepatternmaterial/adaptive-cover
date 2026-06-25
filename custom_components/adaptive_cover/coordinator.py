@@ -278,6 +278,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Control state at end time."""
 
         now = dt.datetime.now()
+        # Initialize to None; assign only when a valid source exists so we
+        # never reference an unbound variable below.
+        time = None
         if self.end_time is not None:
             time = self.end_time
         if self.end_time_entity is not None:
@@ -285,8 +288,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         self.logger.debug("Checking timed refresh. End time: %s, now: %s", time, now)
 
+        if time is None:
+            self.logger.debug("Timed refresh: end time is None, skipping")
+            return
+
         time_check = now - get_datetime_from_str(time)
-        if time is not None and (time_check <= dt.timedelta(seconds=1)):
+        if time_check <= dt.timedelta(seconds=1):
             self.timed_refresh = True
             self.logger.debug("Timed refresh triggered")
             await self.async_refresh()
@@ -349,6 +356,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         data = event.data
         if data["old_state"] is None:
             self.logger.debug("Old state is None")
+            return
+        if data["new_state"] is None:
+            # Cover entity was removed from HA while the integration is running.
+            self.logger.debug("New state is None (entity removed?), skipping")
             return
         self.state_change_data = StateChangedData(
             data["entity_id"], data["old_state"], data["new_state"]
@@ -714,7 +725,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 *self.common_data(options),
                 *self.vertical_data(options),
             )
-        if self._cover_type == "cover_awning":
+        elif self._cover_type == "cover_awning":
             cover_data = AdaptiveHorizontalCover(
                 self.hass,
                 self.logger,
@@ -723,13 +734,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 *self.vertical_data(options),
                 *self.horizontal_data(options),
             )
-        if self._cover_type == "cover_tilt":
+        elif self._cover_type == "cover_tilt":
             cover_data = AdaptiveTiltCover(
                 self.hass,
                 self.logger,
                 *self.pos_sun,
                 *self.common_data(options),
                 *self.tilt_data(options),
+            )
+        else:
+            raise ValueError(
+                f"Unknown cover type '{self._cover_type}'. "
+                "Expected one of: cover_blind, cover_awning, cover_tilt."
             )
         return cover_data
 
@@ -755,11 +771,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return now >= time
         if self.start_time is not None:
             time = get_datetime_from_str(self.start_time)
-
+            self._start_time = time
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s", time, now, now >= time
             )
-            self._start_time
             return now >= time
         return True
 
@@ -803,7 +818,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         position = self._get_current_position(entity)
         if position is not None:
             return position != state
-        self.logger.debug("Cover is already at position %s", state)
+        self.logger.debug(
+            "Cannot read position for %s (entity unavailable?); skipping move to %s",
+            entity,
+            state,
+        )
         return False
 
     def check_position_delta(self, entity, state: int, options):
@@ -907,8 +926,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Update climate mode data and control method."""
         climate = ClimateCoverData(*self.get_climate_data(options))
         climate.max_forecast_temp = self._max_forecast_temp
-        self.climate_state = round(ClimateCoverState(cover_data, climate).get_state())
-        climate_data = ClimateCoverState(cover_data, climate).climate_data
+        # Construct once, reuse for both state and climate_data to avoid
+        # running the full decision tree twice per update cycle.
+        climate_cover = ClimateCoverState(cover_data, climate)
+        self.climate_state = round(climate_cover.get_state())
+        climate_data = climate_cover.climate_data
+        # Reset to the default before applying season-specific overrides so
+        # that transitions (e.g. summer → neither) don't leave a stale value.
+        self.control_method = "intermediate"
         if climate_data.is_summer and self.switch_mode:
             self.control_method = "summer"
         if climate_data.is_winter and self.switch_mode:
@@ -1133,7 +1158,7 @@ class AdaptiveCoverManager:
         # human-vs-machine deviation), with a 5% floor when not set.
         if target_call is not None and entity_id in target_call:
             target = target_call.get(entity_id)
-            if target is not None:
+            if target is not None and new_position is not None:
                 tolerance = manual_threshold if manual_threshold is not None else 5
                 if abs(target - new_position) <= tolerance:
                     self.logger.debug(
@@ -1145,6 +1170,14 @@ class AdaptiveCoverManager:
                         tolerance,
                     )
                     return
+
+        if new_position is None:
+            self.logger.debug(
+                "Cover %s reported no position attribute (mid-travel or unavailable); "
+                "skipping manual-detect",
+                entity_id,
+            )
+            return
 
         if new_position != our_state:
             if (
