@@ -51,25 +51,23 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 
 ### v0.3.0b3
 
-**Bug fixes (17 issues resolved)**
-
-- **Crash — unknown cover type:** `get_blind_data` used three independent `if` statements; an unrecognised `sensor_type` value raised `UnboundLocalError`. Changed to `if/elif/else` with an explicit `ValueError`.
-- **Crash — timed refresh:** `async_timed_refresh` left the `time` variable unbound when both `end_time` and `end_time_entity` were `None`, crashing immediately. Now initialised to `None` with an early return.
-- **Crash — cover entity removed:** `async_check_cover_state_change` had no guard for `new_state=None` (HA fires this when a cover entity is deleted while the integration is running). Added early return.
-- **Crash — cover mid-travel:** `handle_state_change` called `abs(target - new_position)` without checking `new_position` for `None` (happens while cover is moving or entity is unavailable). Both arithmetic sites guarded.
-- **Crash — unavailable lux/irradiance sensor:** `lux` and `irradiance` properties called `float(value)` on the result of `get_safe_state`, which returns `None` for unavailable entities. Added `None` check and `try/except`.
-- **Crash — no covers configured:** `switch.py` called `len(config_entry.options.get(CONF_ENTITIES))` without a default; raises `TypeError` when the key is absent. Added `[]` default.
-- **Silent bug — `_start_time` not stored:** `after_start_time` had a dead expression `self._start_time` (no-op read) instead of `self._start_time = time`. Assignment restored.
-- **Logic bug — `control_method` stuck on season:** `control_method` was never reset between update cycles; a summer→neither-season transition left the Control Method sensor permanently showing `"summer"`. Now reset to `"intermediate"` at the start of each cycle.
-- **Logic bug — `ClimateCoverState` constructed twice:** `climate_mode_data` instantiated `ClimateCoverState` twice, running the full decision tree twice per update. First instance is now reused.
-- **Missing listener — dynamic start time:** `CONF_START_ENTITY` was absent from the state-change listener list in `__init__.py`; changes to a dynamic start-time entity never triggered a coordinator refresh.
-- **Dead code — `async_initialize_integration`:** function was never called anywhere; removed.
-- **Hang — Reset button:** `async_press` had an unbounded `while` loop waiting for cover position confirmation; if the cover never responded the handler hung forever. Capped at 30 s with a warning log.
-- **Deprecated — `datetime.utcnow()`:** replaced with `datetime.now(dt.UTC)` throughout (deprecated since Python 3.12, the project's target version).
-- **Wrong fail-safe — `outside_high`:** returned `True` (assume "hot outside") when the outdoor temperature sensor was unavailable, biasing `is_summer` to `True` during outages. Now returns `False`.
-- **Wrong fail-safe — `get_datetime_from_str`:** `ignoretz=True` silently discarded timezone information from HA `input_datetime` strings, producing off-by-offset errors in non-UTC environments. Now converts timezone-aware strings to local naive datetimes.
-- **Dead property — `_get_azimuth_edges`:** had a wrong return-type annotation (`tuple[int,int]` but returned `int`) and was referenced nowhere. Removed.
-- **Performance — `SunData` date range recomputed per loop iteration:** `solar_azimuth` and `solar_elevation` called `self.times` (a property that rebuilds the full `pd.date_range`) on every loop step. Cached to a local variable.
+- **17 Code Review Bug Fixes:**
+  - **get_blind_data UnboundLocalError:** Fixed a crash where an unrecognized cover type would raise `UnboundLocalError`.
+  - **async_timed_refresh UnboundLocalError:** Initialized `time` to `None` and added an early return to prevent crashes when both end-time fields are `None`.
+  - **async_check_cover_state_change AttributeError:** Added a guard for `new_state=None` (which occurs when cover entities are removed from HA).
+  - **handle_state_change TypeError:** Guarded both position comparison sites against `None` positions (e.g. when cover is mid-travel or unavailable).
+  - **lux / irradiance TypeError:** Added safety guards and `try/except` blocks around `float()` conversions for unavailable sensors.
+  - **switch.py TypeError:** Added a fallback default list to `config_entry.options.get(CONF_ENTITIES, [])` to prevent crashes when the key is absent.
+  - **after_start_time assignment fix:** Restored the missing `self._start_time = time` assignment (was a dead expression).
+  - **control_method reset:** Reset `control_method` to `"intermediate"` at the start of each update cycle to prevent sticky `"summer"` status.
+  - **climate_mode_data optimization:** Reused a single `ClimateCoverState` instance to avoid running the full decision tree twice per cycle.
+  - **CONF_START_ENTITY tracking:** Added the start-time entity to the state-change listener list.
+  - **button.py hang prevention:** Capped the manual override reset busy-wait loop at 30 seconds to prevent indefinite task hangs.
+  - **utcnow deprecation:** Replaced deprecated `datetime.utcnow()` with `datetime.now(_dt.UTC)`.
+  - **outside_high bias fix:** Default to `False` instead of `True` when the outdoor temperature sensor is offline, ensuring we don't assume summer heat and block solar gain during outages.
+  - **helpers.py timezone fix:** Replaced `ignoretz=True` in `get_datetime_from_str` with proper timezone-aware parsing and conversion to local naive datetime.
+  - **sun.py caching:** Cached the `self.times` property inside the solar azimuth/elevation loops to avoid rebuilding the `DatetimeIndex` on every iteration.
+  - **async_initialize_integration cleanup:** Removed dead/unused initialization function.
 
 ### v0.3.0b2
 
