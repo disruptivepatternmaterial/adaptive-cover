@@ -280,13 +280,20 @@ class ClimateCoverData:
             return temp
 
     @property
-    def get_current_temperature(self) -> float:
+    def get_current_temperature(self) -> float | None:
         """Get temperature."""
         if self.temp_switch:
             if self.outside_temperature:
-                return float(self.outside_temperature)
+                try:
+                    return float(self.outside_temperature)
+                except (TypeError, ValueError):
+                    pass
         if self.inside_temperature:
-            return float(self.inside_temperature)
+            try:
+                return float(self.inside_temperature)
+            except (TypeError, ValueError):
+                pass
+        return None
 
     @property
     def is_presence(self):
@@ -325,16 +332,21 @@ class ClimateCoverData:
     def outside_high(self) -> bool:
         """Check if outdoor temperature is above threshold.
 
-        Returns False (not hot enough outside) when the sensor is unavailable
-        so that a missing/offline sensor does not cause the integration to
-        assume summer conditions and unnecessarily block solar gain.
+        Three distinct cases:
+        - No outdoor threshold configured (temp_summer_outside is None): the
+          user did not set an outdoor gate, so don't suppress summer mode → True.
+        - Threshold configured but sensor unavailable (outside_temperature is
+          None): fail-safe by not assuming "hot outside" → False.
+        - Both present: evaluate normally.
         """
-        if (
-            self.temp_summer_outside is not None
-            and self.outside_temperature is not None
-        ):
+        if self.temp_summer_outside is None:
+            return True
+        if self.outside_temperature is None:
+            return False
+        try:
             return float(self.outside_temperature) > self.temp_summer_outside
-        return False
+        except (TypeError, ValueError):
+            return False
 
     @property
     def is_summer(self) -> bool:

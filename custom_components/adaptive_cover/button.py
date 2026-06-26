@@ -104,6 +104,10 @@ class AdaptiveCoverButton(
                         entity,
                         self._RESET_TIMEOUT_S,
                     )
+                    # Clear stale wait state so handle_state_change does not
+                    # permanently suppress manual-override detection for this cover.
+                    self.coordinator.wait_for_target.pop(entity, None)
+                    self.coordinator.target_call.pop(entity, None)
                 self.coordinator.manager.reset(entity)
             else:
                 _LOGGER.debug(

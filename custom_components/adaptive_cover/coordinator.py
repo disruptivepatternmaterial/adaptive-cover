@@ -284,7 +284,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.end_time is not None:
             time = self.end_time
         if self.end_time_entity is not None:
-            time = get_safe_state(self.hass, self.end_time_entity)
+            # Only override the config value when the entity is actually available;
+            # an unavailable entity returns None and should not discard a valid
+            # static end_time that was already assigned above.
+            entity_time = get_safe_state(self.hass, self.end_time_entity)
+            if entity_time is not None:
+                time = entity_time
 
         self.logger.debug("Checking timed refresh. End time: %s, now: %s", time, now)
 
@@ -761,13 +766,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Check if time is after start time."""
         now = dt.datetime.now()
         if self.start_time_entity is not None:
-            time = get_datetime_from_str(
-                get_safe_state(self.hass, self.start_time_entity)
-            )
+            raw = get_safe_state(self.hass, self.start_time_entity)
+            if raw is None:
+                # Entity unavailable — treat as "start time not yet reached"
+                # so covers are not driven while the time source is offline.
+                self.logger.debug(
+                    "Start time entity %s unavailable; deferring adaptive time",
+                    self.start_time_entity,
+                )
+                return False
+            time = get_datetime_from_str(raw)
+            if time is None:
+                self.logger.debug(
+                    "Start time entity %s returned unparseable value %r; deferring",
+                    self.start_time_entity,
+                    raw,
+                )
+                return False
+            self._start_time = time
             self.logger.debug(
                 "Start time: %s, now: %s, now >= time: %s ", time, now, now >= time
             )
-            self._start_time = time
             return now >= time
         if self.start_time is not None:
             time = get_datetime_from_str(self.start_time)
