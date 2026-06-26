@@ -33,15 +33,22 @@ def get_datetime_from_str(string: str):
 
     Parses the string respecting any embedded timezone information and then
     converts to the local wall-clock time (naive), which is what the rest of
-    the coordinator uses for time comparisons.  The previous ``ignoretz=True``
-    silently discarded timezone info, which could produce off-by-offset errors
-    for users whose HA input_datetime entities return aware ISO strings.
+    the coordinator uses for time comparisons.
+
+    Returns None (rather than raising) when the string cannot be parsed, so
+    callers that check for None before doing datetime arithmetic are safe even
+    when a generic sensor (e.g. a non-datetime input_text) is configured for
+    the start/end time slot.
     """
-    if string is not None:
+    if string is None:
+        return None
+    try:
         parsed = parser.parse(string)
-        if parsed.tzinfo is not None:
-            parsed = parsed.astimezone(tz=None).replace(tzinfo=None)
-        return parsed
+    except (ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(tz=None).replace(tzinfo=None)
+    return parsed
 
 
 def get_last_updated(entity_id: str, hass: HomeAssistant):

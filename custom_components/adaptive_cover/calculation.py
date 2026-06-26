@@ -50,13 +50,18 @@ class AdaptiveGeneralCover(ABC):
 
     def solar_times(self):
         """Determine start/end times."""
+        # Snapshot times once so azimuth, elevation, and the index all share
+        # the same DatetimeIndex. Calling self.sun_data.times three times
+        # rebuilds the pd.date_range each call and can yield arrays from
+        # different seconds if a midnight boundary is crossed mid-call.
+        times = self.sun_data.times
         df_today = pd.DataFrame(
             {
-                "azimuth": self.sun_data.solar_azimuth,
-                "elevation": self.sun_data.solar_elevation,
+                "azimuth": [self.sun_data.location.solar_azimuth(t, self.sun_data.elevation) for t in times],
+                "elevation": [self.sun_data.location.solar_elevation(t, self.sun_data.elevation) for t in times],
             }
         )
-        solpos = df_today.set_index(self.sun_data.times)
+        solpos = df_today.set_index(times)
 
         alpha = solpos["azimuth"]
         frame = (

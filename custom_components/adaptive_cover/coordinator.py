@@ -297,13 +297,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.logger.debug("Timed refresh: end time is None, skipping")
             return
 
-        time_check = now - get_datetime_from_str(time)
-        if time_check <= dt.timedelta(seconds=1):
+        parsed_time = get_datetime_from_str(time)
+        if parsed_time is None:
+            self.logger.debug("Timed refresh: could not parse end time %r, skipping", time)
+            return
+        # Apply the same midnight rollover that _end_time uses: a configured
+        # time of 00:00 means "end of day" so advance by one day so it isn't
+        # immediately in the past when evaluated at midnight.
+        if parsed_time.time() == dt.time(0, 0):
+            parsed_time = parsed_time + dt.timedelta(days=1)
+        # Use abs() so the callback still fires even when the event loop is
+        # delayed past the 1-second gate, rather than silently skipping.
+        time_check = abs(now - parsed_time)
+        if time_check <= dt.timedelta(seconds=60):
             self.timed_refresh = True
-            self.logger.debug("Timed refresh triggered")
+            self.logger.debug("Timed refresh triggered (delta %s)", time_check)
             await self.async_refresh()
         else:
-            self.logger.debug("Timed refresh, but: not equal to end time")
+            self.logger.debug(
+                "Timed refresh fired but delta %s > 60s threshold; skipping", time_check
+            )
 
     async def async_check_entity_state_change(
         self, event: Event[EventStateChangedData]
@@ -955,8 +968,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.control_method = "intermediate"
         if climate_data.is_summer and self.switch_mode:
             self.control_method = "summer"
-        if climate_data.is_winter and self.switch_mode:
+        elif climate_data.is_winter and self.switch_mode:
             self.control_method = "winter"
+        elif climate_data.is_summer and climate_data.is_winter and self.switch_mode:
+            # Misconfigured thresholds (temp_high < temp_low) — log and default.
+            self.logger.warning(
+                "Both is_summer and is_winter are True — check temp_high/temp_low config; defaulting to intermediate"
+            )
         self.logger.debug(
             "Climate mode control method was set to %s", self.control_method
         )
