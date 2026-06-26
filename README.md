@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)  
-**Current release:** [v0.3.0b3](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.0b3)  
+**Current release:** [v0.3.6](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.6)  
 **HACS name:** `Adaptive Cover (NET Fork)`  
 **Integration domain:** `adaptive_cover`
 
@@ -26,9 +26,9 @@ Based on the community template approach: [Automatic Blinds](https://community.h
 4. Restart Home Assistant
 5. **Settings → Devices & services → Add integration** → **Adaptive Cover (NET Fork)**
 
-Do **not** add `basbruss/adaptive-cover` — that is upstream and a different release line (v1.4.x). This fork uses **0.3.0b*** versioning.
+Do **not** add `basbruss/adaptive-cover` — that is upstream and a different release line (v1.4.x). This fork uses **0.3.x** versioning.
 
-After adding the custom repo once, updates: HACS → **Adaptive Cover (NET Fork)** → **Update** (should show **v0.3.0b3** when [GitHub release](https://github.com/disruptivepatternmaterial/adaptive-cover/releases) exists).
+After adding the custom repo once, updates: HACS → **Adaptive Cover (NET Fork)** → **Update** (should show **v0.3.6** when [GitHub release](https://github.com/disruptivepatternmaterial/adaptive-cover/releases) exists).
 
 ### Manual install
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.0b3"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.6"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -49,7 +49,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 
 ## NET Fork changes (changelog)
 
-### v0.3.0b3
+### v0.3.6
 
 - **17 Code Review Bug Fixes:**
   - **get_blind_data UnboundLocalError:** Fixed a crash where an unrecognized cover type would raise `UnboundLocalError`.
