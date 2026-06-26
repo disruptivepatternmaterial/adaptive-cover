@@ -1,6 +1,9 @@
 name: "Release"
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types:
       - "published"
@@ -16,10 +19,15 @@ jobs:
       - name: "Checkout the repository"
         uses: "actions/checkout@v4.2.1"
 
-      - name: 🔢 Adjust version number
+      - name: 🔢 Adjust version number in manifest
         shell: bash
         run: |
-          version="${{ github.event.release.tag_name }}"
+          # Works for both push-tag and manual-publish triggers
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            version="${{ github.ref_name }}"
+          else
+            version="${{ github.event.release.tag_name }}"
+          fi
           version="${version,,}"
           version="${version#v}"
           yq e -P -o=json \
@@ -32,7 +40,12 @@ jobs:
           cd "${{ github.workspace }}/custom_components/adaptive_cover"
           zip adaptive_cover.zip -r ./
 
-      - name: "Upload the ZIP file to the release"
+      - name: "Create release and upload ZIP"
         uses: softprops/action-gh-release@v2.2.1
         with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ github.ref_name }} — Adaptive Cover (NET Fork)"
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'b') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
           files: ${{ github.workspace }}/custom_components/adaptive_cover/adaptive_cover.zip
