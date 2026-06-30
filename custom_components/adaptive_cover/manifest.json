@@ -9,5 +9,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/disruptivepatternmaterial/adaptive-cover/issues",
   "requirements": ["pandas"],
-  "version": "0.3.8"
+  "version": "0.3.9"
 }

@@ -6,7 +6,11 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ## [Unreleased]
 
-### Changed
+---
+
+## [0.3.9] — 2026-06-30
+
+### Added
 
 - Added repo-native process artifacts to speed future delivery:
   - `AGENTS.md`

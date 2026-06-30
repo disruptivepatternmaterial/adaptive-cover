@@ -7,9 +7,9 @@
 
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
-**This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)  
-**Current release:** [v0.3.8](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.8)  
-**HACS name:** `Adaptive Cover (NET Fork)`  
+**This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
+**Current release:** [v0.3.9](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.9)
+**HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
 Fork lineage: [basbruss/adaptive-cover](https://github.com/basbruss/adaptive-cover) → [rako79/adaptive-cover](https://github.com/rako79/adaptive-cover) → this fork.
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.8"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.9"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,15 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.9 — Process and release hardening
+
+- Added repo-native execution contract and process artifacts (`AGENTS.md`, `.cursor/rules/*`, `.cursor/skills/*`, `docs/specs/*`, `docs/runbooks/*`).
+- Added CI and local quality gates (`.github/workflows/ci.yml`, `scripts/check`, `scripts/test`, `scripts/validate_release_metadata.py`).
+- Added release metadata validator coverage and edge-case handling (missing files, inline-comment parsing, release-drafter typo guards).
+- Aligned contributor/release hygiene (`CONTRIBUTING.md`, `SECURITY.md`, issue templates, changelog workflow).
+
+---
 
 ### v0.3.8 — Baseline hardening pass
 
@@ -170,7 +179,7 @@ cd adaptive-cover
 python3 -m pytest tests/ -v
 ```
 
-Requires only `pytest` (HA libs stubbed in `tests/conftest.py`). **33 tests** cover Store persistence, startup restore gating, timer/manual-detect hardening, aware-datetime gating safety, forecast retry behavior, config-flow option/unique-id persistence, diagnostics redaction/runtime summaries, window-latch scheduler cleanup, and climate-state clipping.
+Requires only `pytest` (HA libs stubbed in `tests/conftest.py`). **40 tests** cover Store persistence, startup restore gating, timer/manual-detect hardening, aware-datetime gating safety, forecast retry behavior, config-flow option/unique-id persistence, diagnostics redaction/runtime summaries, window-latch scheduler cleanup, climate-state clipping, and release metadata validation edge cases.
 
 ---
 
