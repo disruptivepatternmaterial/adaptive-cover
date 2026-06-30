@@ -6,7 +6,10 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from custom_components.adaptive_cover.config_flow import ConfigFlowHandler, OptionsFlowHandler
+from custom_components.adaptive_cover.config_flow import (
+    ConfigFlowHandler,
+    OptionsFlowHandler,
+)
 from custom_components.adaptive_cover.const import (
     CONF_CLIMATE_MODE,
     CONF_ENABLE_MAX_POSITION,
@@ -74,7 +77,9 @@ def test_async_step_user_normalizes_name_in_unique_id() -> None:
     flow.async_step_vertical = AsyncMock(return_value={"type": "vertical"})
 
     result = _run(
-        flow.async_step_user({"name": "  Office   South  ", CONF_MODE: SensorType.BLIND})
+        flow.async_step_user(
+            {"name": "  Office   South  ", CONF_MODE: SensorType.BLIND}
+        )
     )
 
     assert result == {"type": "vertical"}

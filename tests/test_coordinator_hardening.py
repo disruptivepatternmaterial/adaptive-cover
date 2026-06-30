@@ -256,9 +256,7 @@ def test_forecast_failure_uses_short_retry_ttl() -> None:
     coordinator._FORECAST_CACHE_TTL = dt.timedelta(minutes=15)
     coordinator._FORECAST_FAILURE_RETRY_TTL = dt.timedelta(seconds=60)
     coordinator._last_forecast_entity = "weather.home"
-    coordinator._last_forecast_fetch = dt.datetime.now(UTC) - dt.timedelta(
-        minutes=2
-    )
+    coordinator._last_forecast_fetch = dt.datetime.now(UTC) - dt.timedelta(minutes=2)
     coordinator._last_forecast_success = False
     coordinator._max_forecast_temp = 25.0
 

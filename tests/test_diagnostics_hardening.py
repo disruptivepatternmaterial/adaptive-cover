@@ -6,8 +6,14 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from custom_components.adaptive_cover.const import CONF_ENTITIES, CONF_TEMP_ENTITY, DOMAIN
-from custom_components.adaptive_cover.diagnostics import async_get_config_entry_diagnostics
+from custom_components.adaptive_cover.const import (
+    CONF_ENTITIES,
+    CONF_TEMP_ENTITY,
+    DOMAIN,
+)
+from custom_components.adaptive_cover.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
 
 
 def _run(coro):

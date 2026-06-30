@@ -1,4 +1,5 @@
 """Tests for AdaptiveCoverManager manual state persistence and startup drive guard."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +15,7 @@ UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(coro):
     """Run a coroutine synchronously (no pytest-asyncio required)."""
     return asyncio.get_event_loop().run_until_complete(coro)
@@ -25,9 +27,7 @@ def _discard_coro(coro):
         coro.close()
 
 
-def _make_manager(
-    tmp_storage=None, entry_id: str = "test_entry", reset_duration=None
-):
+def _make_manager(tmp_storage=None, entry_id: str = "test_entry", reset_duration=None):
     """Return an AdaptiveCoverManager backed by an in-memory Store mock."""
     hass = MagicMock()
     hass.async_create_task = MagicMock(side_effect=_discard_coro)
@@ -52,10 +52,12 @@ def _make_manager(
 # Persistence: async_load
 # ---------------------------------------------------------------------------
 
+
 class TestManualStatePersistence:
     """Validate manual state loading from persistent storage."""
 
     def test_load_restores_manual_control(self):
+        """Restore manual_control flags from persisted storage."""
         stored = {
             "manual_control": {"cover.south": True, "cover.west": False},
             "manual_control_time": {},
@@ -67,6 +69,7 @@ class TestManualStatePersistence:
         assert manager.manual_control["cover.west"] is False
 
     def test_load_restores_manual_control_time(self):
+        """Restore and parse persisted manual control timestamps."""
         ts = dt.datetime(2026, 6, 1, 3, 0, 0, tzinfo=UTC)
         stored = {
             "manual_control": {"cover.south": True},
@@ -80,6 +83,7 @@ class TestManualStatePersistence:
         assert restored_ts.hour == 3
 
     def test_load_with_no_stored_data_is_noop(self):
+        """Leave manager state empty when nothing is stored."""
         manager, store, _ = _make_manager(tmp_storage=None)
         _run(manager.async_load())
 
@@ -87,6 +91,7 @@ class TestManualStatePersistence:
         assert manager.manual_control_time == {}
 
     def test_load_ignores_malformed_timestamps(self):
+        """Ignore invalid timestamp payloads while keeping manual flags."""
         stored = {
             "manual_control": {"cover.south": True},
             "manual_control_time": {"cover.south": "not-a-datetime"},
@@ -102,16 +107,19 @@ class TestManualStatePersistence:
 # Persistence: _schedule_save is called on mutations
 # ---------------------------------------------------------------------------
 
+
 class TestManualStateSaveOnMutation:
     """Validate that mutating methods trigger persistence scheduling."""
 
     def test_mark_manual_control_schedules_save(self):
+        """Schedule persistence when marking an entity as manually controlled."""
         manager, store, hass = _make_manager()
         manager.mark_manual_control("cover.south")
 
         hass.async_create_task.assert_called_once()
 
     def test_reset_schedules_save(self):
+        """Schedule persistence when manual state is reset."""
         manager, store, hass = _make_manager()
         manager.manual_control["cover.south"] = True
         manager.manual_control_time["cover.south"] = dt.datetime.now(UTC)
@@ -122,6 +130,7 @@ class TestManualStateSaveOnMutation:
         hass.async_create_task.assert_called_once()
 
     def test_set_last_updated_schedules_save(self):
+        """Schedule persistence when last-updated tracking changes."""
         manager, store, hass = _make_manager()
         new_state = MagicMock()
         new_state.last_updated = dt.datetime.now(UTC)
@@ -139,6 +148,7 @@ class TestManualStateSaveOnMutation:
 # ---------------------------------------------------------------------------
 # Startup guard: _switches_restored gate
 # ---------------------------------------------------------------------------
+
 
 class TestStartupGuard:
     """Validate switch-restore gating semantics during startup."""
@@ -180,6 +190,7 @@ class TestStartupGuard:
         return FakeCoordinator()
 
     def test_not_restored_until_all_expected_ids_marked(self):
+        """Keep startup gate closed until every expected switch restores."""
         coord = self._make_coordinator()
         coord.set_expected_switch_ids({"switch_a", "switch_b"})
 
@@ -190,6 +201,7 @@ class TestStartupGuard:
         assert coord._switches_restored is True
 
     def test_single_switch_restores_immediately(self):
+        """Open startup gate once the only expected switch restores."""
         coord = self._make_coordinator()
         coord.set_expected_switch_ids({"switch_a"})
 
@@ -197,6 +209,7 @@ class TestStartupGuard:
         assert coord._switches_restored is True
 
     def test_extra_restore_call_does_not_flip_back(self):
+        """Ignore duplicate restore events once gate is already open."""
         coord = self._make_coordinator()
         coord.set_expected_switch_ids({"switch_a"})
         coord.mark_switch_restored("switch_a")
@@ -206,6 +219,7 @@ class TestStartupGuard:
         assert coord._switches_restored is True
 
     def test_refresh_scheduled_when_all_restored(self):
+        """Schedule one refresh callback when restore gate opens."""
         coord = self._make_coordinator()
         coord.set_expected_switch_ids({"switch_a"})
 
@@ -214,6 +228,7 @@ class TestStartupGuard:
         coord.hass.async_create_task.assert_called_once()
 
     def test_refresh_not_scheduled_when_partial(self):
+        """Do not schedule refresh until all expected switches restore."""
         coord = self._make_coordinator()
         coord.set_expected_switch_ids({"switch_a", "switch_b"})
 

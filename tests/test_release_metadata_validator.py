@@ -158,3 +158,44 @@ def test_validator_fails_on_missing_changelog_heading(
     out, err = capsys.readouterr()
     assert out == ""
     assert "changelog.md missing heading" in err.lower()
+
+
+def test_validator_fails_cleanly_when_manifest_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Validator should return a clean error when a required file is absent."""
+    _write_repo_surface(tmp_path)
+    (tmp_path / "custom_components" / "adaptive_cover" / "manifest.json").unlink()
+    module = _load_validator_module()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+
+    assert module.main() == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert "manifest.json" in err
+
+
+def test_validator_parses_pyproject_version_with_inline_comment(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Version parsing should ignore inline comments on the pyproject version."""
+    _write_repo_surface(tmp_path)
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text(encoding="utf-8").replace(
+            'version = "0.3.8"',
+            'version = "0.3.8"  # comment',
+        ),
+        encoding="utf-8",
+    )
+    module = _load_validator_module()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+
+    assert module.main() == 0
+    out, err = capsys.readouterr()
+    assert "validation passed" in out.lower()
+    assert err == ""

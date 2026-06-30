@@ -21,7 +21,7 @@ def _mod(name: str, **attrs) -> ModuleType:
 
 # stdlib-adjacent stubs
 try:
-    import numpy  # noqa: F401
+    import numpy as np  # noqa: F401
 except ImportError:
     _mod(
         "numpy",
@@ -43,7 +43,7 @@ except ImportError:
     _mod("pytz", UTC=None, timezone=MagicMock())
 
 try:
-    import pandas  # noqa: F401
+    import pandas as pd  # noqa: F401
 except ImportError:
     _mod(
         "pandas",
@@ -67,6 +67,7 @@ except ImportError:
 try:
     import voluptuous  # noqa: F401
 except ImportError:
+
     class _VolSchema:
         """Simple voluptuous.Schema stand-in."""
 
@@ -247,22 +248,27 @@ _mod(
     ConfigFlow=_ConfigFlow,
     OptionsFlow=_OptionsFlow,
 )
-_mod("homeassistant.const",
-     ATTR_ENTITY_ID="entity_id",
-     SERVICE_SET_COVER_POSITION="set_cover_position",
-     SERVICE_SET_COVER_TILT_POSITION="set_cover_tilt_position",
-     Platform=SimpleNamespace(
-         SENSOR="sensor",
-         SWITCH="switch",
-         BINARY_SENSOR="binary_sensor",
-         BUTTON="button",
-         SELECT="select",
-     ),
+_mod(
+    "homeassistant.const",
+    ATTR_ENTITY_ID="entity_id",
+    SERVICE_SET_COVER_POSITION="set_cover_position",
+    SERVICE_SET_COVER_TILT_POSITION="set_cover_tilt_position",
+    Platform=SimpleNamespace(
+        SENSOR="sensor",
+        SWITCH="switch",
+        BINARY_SENSOR="binary_sensor",
+        BUTTON="button",
+        SELECT="select",
+    ),
 )
-_mod("homeassistant.core",
-     HomeAssistant=MagicMock, Event=MagicMock,
-     EventStateChangedData=MagicMock, State=MagicMock, callback=lambda f: f,
-     split_entity_id=lambda entity: entity.split(".", 1),
+_mod(
+    "homeassistant.core",
+    HomeAssistant=MagicMock,
+    Event=MagicMock,
+    EventStateChangedData=MagicMock,
+    State=MagicMock,
+    callback=lambda f: f,
+    split_entity_id=lambda entity: entity.split(".", 1),
 )
 _mod("homeassistant.data_entry_flow", FlowResult=dict)
 helpers_module = _mod("homeassistant.helpers")
@@ -296,4 +302,6 @@ helpers_module.selector = sys.modules["homeassistant.helpers.selector"]
 _mod("homeassistant.helpers.sun", get_astral_location=lambda hass: (_Location(), 0))
 _mod("homeassistant.components")
 _mod("homeassistant.components.cover", DOMAIN="cover")
-_mod("homeassistant.components.diagnostics", async_redact_data=lambda data, _redact: data)
+_mod(
+    "homeassistant.components.diagnostics", async_redact_data=lambda data, _redact: data
+)

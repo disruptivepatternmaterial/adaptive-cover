@@ -41,7 +41,7 @@ def _pyproject_version() -> str:
         key, _, value = line.partition("=")
         if key.strip() != "version":
             continue
-        version = value.strip().strip('"').strip("'")
+        version = value.split("#", 1)[0].strip().strip('"').strip("'")
         if version:
             return version
 
@@ -93,19 +93,18 @@ def main() -> int:
     try:
         manifest_version = _manifest_version()
         pyproject_version = _pyproject_version()
-    except ValueError as err:
+        if manifest_version != pyproject_version:
+            errors.append(
+                "Version mismatch: "
+                f"manifest.json={manifest_version} vs pyproject.toml={pyproject_version}"
+            )
+
+        errors.extend(_check_readme(manifest_version))
+        errors.extend(_check_changelog(manifest_version))
+        errors.extend(_check_release_drafter_typos())
+    except (OSError, ValueError, json.JSONDecodeError) as err:
         sys.stderr.write(f"ERROR: {err}\n")
         return 1
-
-    if manifest_version != pyproject_version:
-        errors.append(
-            "Version mismatch: "
-            f"manifest.json={manifest_version} vs pyproject.toml={pyproject_version}"
-        )
-
-    errors.extend(_check_readme(manifest_version))
-    errors.extend(_check_changelog(manifest_version))
-    errors.extend(_check_release_drafter_typos())
 
     if errors:
         sys.stderr.write("Release metadata validation failed:\n")
