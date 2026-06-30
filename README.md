@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)  
-**Current release:** [v0.3.7](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.7)  
+**Current release:** [v0.3.8](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.8)  
 **HACS name:** `Adaptive Cover (NET Fork)`  
 **Integration domain:** `adaptive_cover`
 
@@ -41,13 +41,29 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.7"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.8"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.8 — Baseline hardening pass
+
+Execution-first cleanup baseline before adding new features:
+
+- **Startup manual persistence fixed:** persisted manual holds are no longer cleared during startup before switch state restoration completes.
+- **Timer lifecycle fixed:** scheduled point-in-time callbacks (end-time and window-latch release) are now canceled on unload/reload, preventing stale coordinator callbacks.
+- **Config flow persistence fixed:** initial setup now preserves all collected automation/climate options (end-time entity, return-sunset, window sensors/hold, cloud coverage, min/max toggle flags).
+- **Manual-detection reliability improved:** wait-for-target now clears with tolerance (not exact-only) and times out stale waits so manual override detection cannot get permanently suppressed.
+- **Coordinator resilience improved:** `_async_update_data` now raises `UpdateFailed` on unexpected errors; `sun.sun` missing/partial states use a safe fallback instead of crashing; entities guard against `coordinator.data is None`.
+- **Control method warning fixed:** the `is_summer && is_winter` misconfiguration warning path now actually executes when thresholds are inverted.
+- **Override duration UI cleaned up:** removed unsupported `sunset` option from manual-override duration select; legacy `9999` values map to `240_min`.
+- **Diagnostics hardened:** config/options diagnostics are redacted for entity identifiers and now include useful runtime state.
+- **Test baseline expanded:** suite now includes targeted hardening tests for coordinator behavior, aware-datetime safety, forecast retry behavior, config flow persistence/unique IDs, diagnostics redaction, and climate-state clipping.
+
+---
 
 ### v0.3.7 — Lower-priority bug fixes (multi-model review round 2)
 
@@ -141,7 +157,7 @@ cd adaptive-cover
 python3 -m pytest tests/ -v
 ```
 
-Requires only `pytest` (HA libs stubbed in `tests/conftest.py`). **13 tests** cover Store load/save, malformed timestamp handling, and switch-restore gate.
+Requires only `pytest` (HA libs stubbed in `tests/conftest.py`). **33 tests** cover Store persistence, startup restore gating, timer/manual-detect hardening, aware-datetime gating safety, forecast retry behavior, config-flow option/unique-id persistence, diagnostics redaction/runtime summaries, window-latch scheduler cleanup, and climate-state clipping.
 
 ---
 
@@ -246,7 +262,7 @@ Split into presence and no-presence strategies:
 | Sunset Offset            | 0        | min    | Minutes after sunset to switch to sunset position      |
 | Sunrise Offset           | 0        | min    | Minutes after sunrise to switch back from sunset pos   |
 | Manual Override Duration | 15 min   |        | How long a manual hold lasts before auto-resuming      |
-| Window Open Hold         | 30 min   |        | Keep covers at max after window sensor closes          |
+| Window Open Hold         | 300 s    |        | Keep covers at max after window sensor closes          |
 | Start Time               | None     |        | Don't drive covers before this time (static or entity) |
 | End Time                 | None     |        | Return to sunset position at this time                 |
 | Delta Position           | 1%       |        | Minimum position change before commanding cover        |
@@ -290,7 +306,7 @@ Split into presence and no-presence strategies:
 | `switch.{name}_lux` | Enable lux brightness gating |
 | `switch.{name}_irradiance` | Enable irradiance gating |
 | `button.{name}_reset_manual_override` | Clear all manual holds and return to auto |
-| `select.{name}_manual_override_duration` | Pick override duration (0/15/30/60/120/240 min or sunset) |
+| `select.{name}_manual_override_duration` | Pick override duration (0/15/30/60/120/240 min) |
 
 ![entities](images/entities.png)
 

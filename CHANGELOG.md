@@ -4,6 +4,34 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.8] — 2026-06-29
+
+### Fixed
+
+- **Startup manual persistence:** prevented persisted manual holds from being reset during early startup before switch entities finish restoring.
+- **Timer lifecycle:** cancel point-in-time listeners (end-time and window-latch release) on unload/reload to prevent stale coordinator callbacks.
+- **Config flow persistence:** initial create-entry now preserves all collected options including `end_time`, `end_entity`, `return_sunset`, `window_entity`, `window_open_hold`, `cloud_coverage_entity`, and min/max-limit toggle flags.
+- **Manual-detection reliability:** wait-for-target now clears with tolerance and stale wait states are timed out/cleared so manual detection cannot become permanently suppressed.
+- **Manual-detection ordering:** when a cover reaches an integration-commanded target within tolerance, target metadata now remains available long enough for manager-side guards to suppress false manual detections, then gets consumed.
+- **Forecast retry behavior:** weather-forecast cache now retries quickly after transient failures/unavailable weather entities (short failure TTL) while keeping a longer success cache TTL.
+- **Coordinator resilience:** wrapped coordinator update failures in `UpdateFailed`, added safe fallback when `sun.sun` attributes are unavailable, and guarded entities against `coordinator.data is None`.
+- **Climate control warning branch:** reordered `is_summer` / `is_winter` branching so the inverted-threshold warning path executes when both evaluate true.
+- **`_end_time` parsing guard:** avoid `.time()` on `None` when end-time parsing fails.
+- **Switch restore wiring:** `switch.async_added_to_hass` now calls `super()` so coordinator subscriptions are correctly attached.
+- **No-switch startup gate:** entries with zero switch entities now mark startup restore as complete instead of deadlocking first-refresh handling.
+
+### Changed
+
+- **Manual override duration select:** removed unsupported `sunset` option; legacy `9999` minute values now normalize to `240_min`.
+- **Manual override duration runtime normalization:** legacy `9999` sentinel values now normalize to 240 minutes for manager reset timing as well as UI display.
+- **Diagnostics output:** config/options entity identifiers are redacted, and runtime diagnostics now report counts/flags (not raw entity IDs) for safer support exports.
+- **Manifest hygiene:** reduced hard dependencies to `sun`, moved optional integrations to `after_dependencies`, and kept required runtime package `pandas` declared.
+- **Config flow unique IDs:** user-entered names are normalized (whitespace collapsed to underscores) before unique-id generation.
+- **Python compatibility:** added `from __future__ import annotations` in `calculation.py` for Python 3.9 compatibility in typed annotations.
+- **Test baseline:** expanded from 13 to 33 tests with new coverage for coordinator hardening, aware-datetime time-window safety, forecast retry fallback behavior, config-flow persistence/unique-id normalization, diagnostics runtime redaction/summaries, window-latch scheduler cleanup, and climate-state clipping.
+
+---
+
 ## [0.3.7] — 2026-06-25
 
 Lower-priority bug fixes from a 4-model adversarial code review of v0.3.6.
