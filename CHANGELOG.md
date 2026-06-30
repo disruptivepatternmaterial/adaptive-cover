@@ -4,6 +4,25 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Added repo-native process artifacts to speed future delivery:
+  - `AGENTS.md`
+  - `.cursor/rules/*`
+  - `.cursor/skills/*`
+  - `docs/specs/*`
+  - `docs/runbooks/*`
+- Added `scripts/check`, `scripts/test`, and `scripts/validate_release_metadata.py`.
+- Added CI workflow (`.github/workflows/ci.yml`) to run lint + tests on PRs/pushes.
+- Updated contribution and issue templates for this fork's actual workflow.
+- Aligned toolchain/dependency surfaces (`requirements-dev.txt`, `pyproject.toml`, `.pre-commit-config.yaml`) for `pre-commit` and `ruff`, and added explicit `pytest` to `requirements-dev.txt` for clean-environment CI/test execution.
+- Hardened CI workflow with least-privilege permissions and SHA-pinned GitHub Actions.
+- Added unit tests for `scripts/validate_release_metadata.py`.
+
+---
+
 ## [0.3.8] — 2026-06-29
 
 ### Fixed
