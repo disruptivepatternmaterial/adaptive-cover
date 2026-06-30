@@ -1,0 +1,24 @@
+---
+description: Home Assistant integration hygiene for adaptive_cover runtime and config flows
+globs: custom_components/adaptive_cover/**
+alwaysApply: false
+---
+
+# Home Assistant Integration Hygiene
+
+- Keep coordinator behavior deterministic during startup, reload, and entity unavailability.
+- Treat diagnostics as support-safe output: redact entity identifiers and sensitive references.
+- Keep config-flow changes backward-compatible with existing options keys and defaults.
+- Prefer explicit guards over crash-prone assumptions when reading HA state attributes.
+
+# Runtime dependency discipline
+
+- Any imported third-party package must be declared in `manifest.json` requirements.
+- Avoid adding heavy dependencies without clear runtime value.
+- Keep behavior compatible with declared HA/Python floors in repository metadata.
+
+# Entity/platform expectations
+
+- `async_added_to_hass` overrides must call `await super().async_added_to_hass()`.
+- Guard against `coordinator.data is None` in entity properties.
+- Keep manual-override and wait-for-target logic resistant to stale timers/state drift.

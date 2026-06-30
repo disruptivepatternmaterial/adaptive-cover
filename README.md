@@ -47,6 +47,19 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 
 ---
 
+## Developer process toolkit
+
+- Execution contract: `AGENTS.md`
+- Quickstart: `docs/runbooks/dev-quickstart.md`
+- Release runbook: `docs/runbooks/release.md`
+- Behavior spec: `docs/specs/behavioral-contract.md`
+- Config-flow spec: `docs/specs/config-flow-contract.md`
+- Repo checks:
+  - `scripts/check`
+  - `python3 scripts/validate_release_metadata.py`
+
+---
+
 ## NET Fork changes (changelog)
 
 ### v0.3.8 — Baseline hardening pass

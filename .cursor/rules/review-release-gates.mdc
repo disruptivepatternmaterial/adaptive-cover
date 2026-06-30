@@ -1,0 +1,29 @@
+---
+description: Enforce review and release gates before publishing tags
+alwaysApply: true
+---
+
+# Review Gates
+
+- For substantial changes, run periodic multi-model review and synthesize findings by severity.
+- Prioritize bugs, regressions, security issues, spec drift, and weak tests.
+- Convert accepted findings into concrete fixes or explicit queued tasks.
+
+# Release Gates
+
+Before tagging a release:
+
+1. Ensure working tree is clean and tests are green.
+2. Verify release metadata consistency:
+   - `manifest.json` version
+   - `pyproject.toml` version
+   - `README.md` current release reference
+   - `CHANGELOG.md` release heading
+3. Run `python3 scripts/validate_release_metadata.py`.
+4. Follow `docs/runbooks/release.md`.
+
+# Commit hygiene
+
+- Keep commits focused (runtime, tests, docs/process separated where practical).
+- Use intent-focused commit messages.
+- Avoid mixing unrelated files in the same commit.

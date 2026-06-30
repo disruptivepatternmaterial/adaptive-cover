@@ -1,0 +1,25 @@
+---
+description: Execute requested work directly with local validation evidence
+alwaysApply: true
+---
+
+# Execution-First
+
+- Implement requested work directly unless a true product decision is blocked.
+- Do not stop at plans; produce file changes when the user asks for delivery.
+- Avoid repetitive confirmation questions when intent is already clear.
+
+# Required validation
+
+For any non-trivial change:
+
+1. Run `scripts/check` (or equivalent lint + tests).
+2. Run `python3 scripts/validate_release_metadata.py` when release/docs/version files are touched.
+3. Report exact command results, including failures and residual risk.
+
+# Quality bar
+
+- Add regression tests for bug fixes.
+- Update user-facing docs for behavior changes.
+- Prefer minimal, focused edits that are easy to review.
+- Never fabricate repository state or command results.
