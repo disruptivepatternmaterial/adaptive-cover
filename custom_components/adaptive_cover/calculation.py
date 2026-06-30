@@ -1,5 +1,7 @@
 """Generate values for all types of covers."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import datetime as _dt
@@ -595,6 +597,7 @@ class ClimateCoverState(NormalCoverState):
         result = self.normal_type_cover()
         if self.climate_data.blind_type == "cover_tilt":
             result = self.tilt_state()
+        result = np.clip(result, 0, 100)
         if self.cover.apply_max_position and result > self.cover.max_pos:
             self.cover.logger.debug(
                 "Climate state: Max position applied (%s > %s)",
@@ -631,6 +634,12 @@ class AdaptiveVerticalCover(AdaptiveGeneralCover):
 
     def calculate_percentage(self) -> float:
         """Convert blind height to percentage or default value."""
+        if not self.h_win:
+            self.logger.warning(
+                "window_height is %s; falling back to default position",
+                self.h_win,
+            )
+            return float(self.default)
         position = self.calculate_position()
         self.logger.debug(
             "Converting height to percentage: %s / %s * 100", position, self.h_win
@@ -661,6 +670,12 @@ class AdaptiveHorizontalCover(AdaptiveVerticalCover):
 
     def calculate_percentage(self) -> float:
         """Convert awn length to percentage or default value."""
+        if not self.awn_length:
+            self.logger.warning(
+                "length_awning is %s; falling back to default position",
+                self.awn_length,
+            )
+            return float(self.default)
         result = self.calculate_position() / self.awn_length * 100
         return round(result)
 
@@ -684,16 +699,23 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
 
         https://www.mdpi.com/1996-1073/13/7/1731
         """
+        if not self.depth:
+            self.logger.warning(
+                "slat_depth is %s; returning closed tilt position",
+                self.depth,
+            )
+            return 0.0
         beta = self.beta
+        ratio = self.slat_distance / self.depth
+        sqrt_term = (tan(beta) ** 2) - (ratio**2) + 1
+        sqrt_term = np.maximum(sqrt_term, 0)
 
         slat = 2 * np.arctan(
             (
                 tan(beta)
-                + np.sqrt(
-                    (tan(beta) ** 2) - ((self.slat_distance / self.depth) ** 2) + 1
-                )
+                + np.sqrt(sqrt_term)
             )
-            / (1 + self.slat_distance / self.depth)
+            / (1 + ratio)
         )
         result = np.rad2deg(slat)
 

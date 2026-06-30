@@ -7,6 +7,9 @@
           "name": "Name",
           "blueprint": "Add blueprint to HomeAssistant",
           "mode": "Type of blind"
+        },
+        "errors": {
+          "invalid_mode": "Selected blind type is invalid."
         }
       },
       "automation": {
@@ -514,8 +517,7 @@
           "30_min": "30 minutes",
           "60_min": "60 minutes",
           "120_min": "2 hours",
-          "240_min": "4 hours",
-          "sunset": "Until sunset"
+          "240_min": "4 hours"
         }
       }
     }

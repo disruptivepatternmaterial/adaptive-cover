@@ -30,7 +30,6 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.SELECT,
 ]
-CONF_SUN = ["sun.sun"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -38,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
-    coordinator = AdaptiveDataUpdateCoordinator(hass)
+    coordinator = AdaptiveDataUpdateCoordinator(hass, entry)
     _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
     _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
     _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
@@ -79,6 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator.async_check_cover_state_change,
         )
     )
+    entry.async_on_unload(coordinator.async_cancel_scheduled_callbacks)
 
     await coordinator.async_config_entry_first_refresh()
     hass.data[DOMAIN][entry.entry_id] = coordinator

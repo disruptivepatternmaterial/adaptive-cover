@@ -89,7 +89,7 @@ SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 CONFIG_SCHEMA = vol.Schema(
     {
         vol.Required("name"): selector.TextSelector(),
-        vol.Optional(CONF_MODE): selector.SelectSelector(
+        vol.Required(CONF_MODE, default=SensorType.BLIND): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=SENSOR_TYPE_MENU, translation_key="mode"
             )
@@ -409,12 +409,24 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         # errors = {}
         if user_input:
-            self.config = user_input
-            if self.config[CONF_MODE] == SensorType.BLIND:
+            self.config = dict(user_input)
+            mode = self.config.get(CONF_MODE)
+            if mode not in SENSOR_TYPE_MENU:
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=CONFIG_SCHEMA,
+                    errors={CONF_MODE: "invalid_mode"},
+                )
+            self.mode = mode
+            safe_name = "_".join(self.config["name"].strip().lower().split())
+            unique_id = f"{safe_name}_{mode}"
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+            if mode == SensorType.BLIND:
                 return await self.async_step_vertical()
-            if self.config[CONF_MODE] == SensorType.AWNING:
+            if mode == SensorType.AWNING:
                 return await self.async_step_horizontal()
-            if self.config[CONF_MODE] == SensorType.TILT:
+            if mode == SensorType.TILT:
                 return await self.async_step_tilt()
         return self.async_show_form(step_id="user", data_schema=CONFIG_SCHEMA)
 
@@ -583,72 +595,44 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
             "cover_awning": "Horizontal",
             "cover_tilt": "Tilt",
         }
+        options = dict(self.config)
+        options.pop("name", None)
+        # Keep legacy option key stable and always present.
+        options[CONF_MODE] = self.config.get(CONF_MODE, self.mode)
+        # Normalize optional fields so OptionsFlow can safely read defaults.
+        defaults = {
+            CONF_CLIMATE_MODE: False,
+            CONF_ENABLE_BLIND_SPOT: False,
+            CONF_ENABLE_MAX_POSITION: False,
+            CONF_ENABLE_MIN_POSITION: False,
+            CONF_INTERP: False,
+            CONF_DELTA_POSITION: 1,
+            CONF_DELTA_TIME: 2,
+            CONF_START_TIME: "00:00:00",
+            CONF_END_TIME: "00:00:00",
+            CONF_RETURN_SUNSET: False,
+            CONF_MANUAL_OVERRIDE_DURATION: {"minutes": 15},
+            CONF_MANUAL_OVERRIDE_RESET: False,
+            CONF_MANUAL_IGNORE_INTERMEDIATE: False,
+            CONF_INTERP_LIST: [],
+            CONF_INTERP_LIST_NEW: [],
+            CONF_ENTITIES: [],
+            CONF_WINDOW_ENTITY: [],
+            CONF_WINDOW_OPEN_HOLD: DEFAULT_WINDOW_OPEN_HOLD,
+        }
+        for key, value in defaults.items():
+            options.setdefault(key, value)
+        if isinstance(options.get(CONF_WINDOW_ENTITY), str):
+            window = options.get(CONF_WINDOW_ENTITY)
+            options[CONF_WINDOW_ENTITY] = [window] if window else []
+
         return self.async_create_entry(
             title=f"{type[self.type_blind]} {self.config['name']}",
             data={
                 "name": self.config["name"],
                 CONF_SENSOR_TYPE: self.type_blind,
             },
-            options={
-                CONF_MODE: self.mode,
-                CONF_AZIMUTH: self.config.get(CONF_AZIMUTH),
-                CONF_HEIGHT_WIN: self.config.get(CONF_HEIGHT_WIN),
-                CONF_DISTANCE: self.config.get(CONF_DISTANCE),
-                CONF_DEFAULT_HEIGHT: self.config.get(CONF_DEFAULT_HEIGHT),
-                CONF_MAX_POSITION: self.config.get(CONF_MAX_POSITION),
-                CONF_MIN_POSITION: self.config.get(CONF_MIN_POSITION),
-                CONF_FOV_LEFT: self.config.get(CONF_FOV_LEFT),
-                CONF_FOV_RIGHT: self.config.get(CONF_FOV_RIGHT),
-                CONF_ENTITIES: self.config.get(CONF_ENTITIES),
-                CONF_INVERSE_STATE: self.config.get(CONF_INVERSE_STATE),
-                CONF_SUNSET_POS: self.config.get(CONF_SUNSET_POS),
-                CONF_SUNSET_OFFSET: self.config.get(CONF_SUNSET_OFFSET),
-                CONF_SUNRISE_OFFSET: self.config.get(CONF_SUNRISE_OFFSET),
-                CONF_LENGTH_AWNING: self.config.get(CONF_LENGTH_AWNING),
-                CONF_AWNING_ANGLE: self.config.get(CONF_AWNING_ANGLE),
-                CONF_TILT_DISTANCE: self.config.get(CONF_TILT_DISTANCE),
-                CONF_TILT_DEPTH: self.config.get(CONF_TILT_DEPTH),
-                CONF_TILT_MODE: self.config.get(CONF_TILT_MODE),
-                CONF_TEMP_ENTITY: self.config.get(CONF_TEMP_ENTITY),
-                CONF_PRESENCE_ENTITY: self.config.get(CONF_PRESENCE_ENTITY),
-                CONF_WEATHER_ENTITY: self.config.get(CONF_WEATHER_ENTITY),
-                CONF_TEMP_LOW: self.config.get(CONF_TEMP_LOW),
-                CONF_TEMP_HIGH: self.config.get(CONF_TEMP_HIGH),
-                CONF_OUTSIDETEMP_ENTITY: self.config.get(CONF_OUTSIDETEMP_ENTITY),
-                CONF_CLIMATE_MODE: self.config.get(CONF_CLIMATE_MODE),
-                CONF_WEATHER_STATE: self.config.get(CONF_WEATHER_STATE),
-                CONF_DELTA_POSITION: self.config.get(CONF_DELTA_POSITION),
-                CONF_DELTA_TIME: self.config.get(CONF_DELTA_TIME),
-                CONF_START_TIME: self.config.get(CONF_START_TIME),
-                CONF_START_ENTITY: self.config.get(CONF_START_ENTITY),
-                CONF_MANUAL_OVERRIDE_DURATION: self.config.get(
-                    CONF_MANUAL_OVERRIDE_DURATION
-                ),
-                CONF_MANUAL_OVERRIDE_RESET: self.config.get(CONF_MANUAL_OVERRIDE_RESET),
-                CONF_MANUAL_THRESHOLD: self.config.get(CONF_MANUAL_THRESHOLD),
-                CONF_MANUAL_IGNORE_INTERMEDIATE: self.config.get(
-                    CONF_MANUAL_IGNORE_INTERMEDIATE
-                ),
-                CONF_BLIND_SPOT_RIGHT: self.config.get(CONF_BLIND_SPOT_RIGHT, None),
-                CONF_BLIND_SPOT_LEFT: self.config.get(CONF_BLIND_SPOT_LEFT, None),
-                CONF_BLIND_SPOT_ELEVATION: self.config.get(
-                    CONF_BLIND_SPOT_ELEVATION, None
-                ),
-                CONF_ENABLE_BLIND_SPOT: self.config.get(CONF_ENABLE_BLIND_SPOT),
-                CONF_MIN_ELEVATION: self.config.get(CONF_MIN_ELEVATION, None),
-                CONF_MAX_ELEVATION: self.config.get(CONF_MAX_ELEVATION, None),
-                CONF_TRANSPARENT_BLIND: self.config.get(CONF_TRANSPARENT_BLIND, False),
-                CONF_INTERP: self.config.get(CONF_INTERP),
-                CONF_INTERP_START: self.config.get(CONF_INTERP_START, None),
-                CONF_INTERP_END: self.config.get(CONF_INTERP_END, None),
-                CONF_INTERP_LIST: self.config.get(CONF_INTERP_LIST, []),
-                CONF_INTERP_LIST_NEW: self.config.get(CONF_INTERP_LIST_NEW, []),
-                CONF_LUX_ENTITY: self.config.get(CONF_LUX_ENTITY),
-                CONF_LUX_THRESHOLD: self.config.get(CONF_LUX_THRESHOLD),
-                CONF_IRRADIANCE_ENTITY: self.config.get(CONF_IRRADIANCE_ENTITY),
-                CONF_IRRADIANCE_THRESHOLD: self.config.get(CONF_IRRADIANCE_THRESHOLD),
-                CONF_OUTSIDE_THRESHOLD: self.config.get(CONF_OUTSIDE_THRESHOLD),
-            },
+            options=options,
         )
 
 
@@ -663,6 +647,11 @@ class OptionsFlowHandler(OptionsFlow):
         """
         self.current_config: dict = dict(config_entry.data)
         self.options = dict(config_entry.options)
+        self.options.setdefault(CONF_CLIMATE_MODE, False)
+        self.options.setdefault(CONF_ENABLE_BLIND_SPOT, False)
+        self.options.setdefault(CONF_INTERP, False)
+        self.options.setdefault(CONF_ENTITIES, [])
+        self.options.setdefault(CONF_WINDOW_ENTITY, [])
         self.sensor_type: SensorType = (
             self.current_config.get(CONF_SENSOR_TYPE) or SensorType.BLIND
         )
@@ -672,13 +661,13 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         options = ["automation", "blind"]
-        if self.options[CONF_CLIMATE_MODE]:
+        if self.options.get(CONF_CLIMATE_MODE, False):
             options.append("climate")
         if self.options.get(CONF_WEATHER_ENTITY):
             options.append("weather")
-        if self.options.get(CONF_ENABLE_BLIND_SPOT):
+        if self.options.get(CONF_ENABLE_BLIND_SPOT, False):
             options.append("blind_spot")
-        if self.options.get(CONF_INTERP):
+        if self.options.get(CONF_INTERP, False):
             options.append("interp")
         return self.async_show_menu(step_id="init", menu_options=options)
 
@@ -709,7 +698,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show basic config for vertical blinds."""
         self.type_blind = SensorType.BLIND
         schema = CLIMATE_MODE.extend(VERTICAL_OPTIONS.schema)
-        if self.options[CONF_CLIMATE_MODE]:
+        if self.options.get(CONF_CLIMATE_MODE, False):
             schema = VERTICAL_OPTIONS
         if user_input is not None:
             keys = [
@@ -732,9 +721,9 @@ class OptionsFlowHandler(OptionsFlow):
             self.options.update(user_input)
             if self.options.get(CONF_INTERP, False):
                 return await self.async_step_interp()
-            if self.options[CONF_ENABLE_BLIND_SPOT]:
+            if self.options.get(CONF_ENABLE_BLIND_SPOT, False):
                 return await self.async_step_blind_spot()
-            if self.options[CONF_CLIMATE_MODE]:
+            if self.options.get(CONF_CLIMATE_MODE, False):
                 return await self.async_step_climate()
             return await self._update_options()
         return self.async_show_form(
@@ -748,7 +737,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show basic config for horizontal blinds."""
         self.type_blind = SensorType.AWNING
         schema = CLIMATE_MODE.extend(HORIZONTAL_OPTIONS.schema)
-        if self.options[CONF_CLIMATE_MODE]:
+        if self.options.get(CONF_CLIMATE_MODE, False):
             schema = HORIZONTAL_OPTIONS
         if user_input is not None:
             keys = [
@@ -769,7 +758,7 @@ class OptionsFlowHandler(OptionsFlow):
                         },
                     )
             self.options.update(user_input)
-            if self.options[CONF_CLIMATE_MODE]:
+            if self.options.get(CONF_CLIMATE_MODE, False):
                 return await self.async_step_climate()
             return await self._update_options()
         return self.async_show_form(
@@ -783,7 +772,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show basic config for tilted blinds."""
         self.type_blind = SensorType.TILT
         schema = CLIMATE_MODE.extend(TILT_OPTIONS.schema)
-        if self.options[CONF_CLIMATE_MODE]:
+        if self.options.get(CONF_CLIMATE_MODE, False):
             schema = TILT_OPTIONS
         if user_input is not None:
             keys = [
@@ -804,7 +793,7 @@ class OptionsFlowHandler(OptionsFlow):
                         },
                     )
             self.options.update(user_input)
-            if self.options[CONF_CLIMATE_MODE]:
+            if self.options.get(CONF_CLIMATE_MODE, False):
                 return await self.async_step_climate()
             return await self._update_options()
         return self.async_show_form(

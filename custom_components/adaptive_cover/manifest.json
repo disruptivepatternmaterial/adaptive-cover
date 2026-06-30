@@ -3,17 +3,11 @@
   "name": "Adaptive Cover (NET Fork)",
   "codeowners": ["@disruptivepatternmaterial"],
   "config_flow": true,
-  "dependencies": [
-    "sun",
-    "device_tracker",
-    "zone",
-    "climate",
-    "sensor",
-    "weather"
-  ],
+  "dependencies": ["sun"],
+  "after_dependencies": ["device_tracker", "zone", "climate", "sensor", "weather"],
   "documentation": "https://github.com/disruptivepatternmaterial/adaptive-cover",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/disruptivepatternmaterial/adaptive-cover/issues",
-  "requirements": ["astral", "pandas"],
-  "version": "0.3.7"
+  "requirements": ["pandas"],
+  "version": "0.3.8"
 }

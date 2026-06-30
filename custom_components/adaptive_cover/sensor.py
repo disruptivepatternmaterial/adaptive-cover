@@ -96,7 +96,6 @@ class AdaptiveCoverSensorEntity(
             "cover_tilt": "Tilt",
         }
         self.coordinator = coordinator
-        self.data = self.coordinator.data
         self._sensor_name = "Cover Position"
         self._attr_unique_id = f"{unique_id}_{self._sensor_name}"
         self.hass = hass
@@ -108,7 +107,6 @@ class AdaptiveCoverSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data
         self.async_write_ha_state()
 
     @property
@@ -119,7 +117,10 @@ class AdaptiveCoverSensorEntity(
     @property
     def native_value(self) -> str | None:
         """Handle when entity is added."""
-        return self.data.states["state"]
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return data.states["state"]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -132,7 +133,10 @@ class AdaptiveCoverSensorEntity(
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:  # noqa: D102
-        return self.data.attributes
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return data.attributes
 
 
 class AdaptiveCoverTimeSensorEntity(
@@ -165,7 +169,6 @@ class AdaptiveCoverTimeSensorEntity(
         self._attr_icon = icon
         self.key = key
         self.coordinator = coordinator
-        self.data = self.coordinator.data
         self._attr_unique_id = f"{unique_id}_{sensor_name}"
         self._device_id = unique_id
         self.hass = hass
@@ -178,7 +181,6 @@ class AdaptiveCoverTimeSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data
         self.async_write_ha_state()
 
     @property
@@ -189,7 +191,10 @@ class AdaptiveCoverTimeSensorEntity(
     @property
     def native_value(self) -> str | None:
         """Handle when entity is added."""
-        return self.data.states[self.key]
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return data.states[self.key]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -226,7 +231,6 @@ class AdaptiveCoverControlSensorEntity(
             "cover_tilt": "Tilt",
         }
         self.coordinator = coordinator
-        self.data = self.coordinator.data
         self._sensor_name = "Control Method"
         self._attr_unique_id = f"{unique_id}_{self._sensor_name}"
         self._device_id = unique_id
@@ -240,7 +244,6 @@ class AdaptiveCoverControlSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data
         self.async_write_ha_state()
 
     @property
@@ -251,7 +254,10 @@ class AdaptiveCoverControlSensorEntity(
     @property
     def native_value(self) -> str | None:
         """Handle when entity is added."""
-        return self.data.states["control"]
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return data.states["control"]
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -306,7 +312,6 @@ class AdaptiveCoverExplainSensorEntity(
             "cover_tilt": "Tilt",
         }
         self.coordinator = coordinator
-        self.data = self.coordinator.data
         self._sensor_name = "Algorithm Status"
         self._attr_unique_id = f"{unique_id}_explanation"
         self._device_id = unique_id
@@ -318,7 +323,6 @@ class AdaptiveCoverExplainSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data
         self.async_write_ha_state()
 
     @property
@@ -329,7 +333,10 @@ class AdaptiveCoverExplainSensorEntity(
     @property
     def native_value(self) -> str | None:
         """Return the explanation string emitted by the coordinator."""
-        return self.data.states.get("explanation", "calculating")
+        data = self.coordinator.data
+        if data is None:
+            return "calculating"
+        return data.states.get("explanation", "calculating")
 
     @property
     def device_info(self) -> DeviceInfo:

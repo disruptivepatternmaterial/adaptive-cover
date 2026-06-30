@@ -16,11 +16,9 @@ OPTIONS = [
     "60_min",
     "120_min",
     "240_min",
-    "sunset",
 ]
 
 # Maps select option <-> minutes stored in config_entry.options.
-# "sunset" uses a sentinel (9999) consumed by the manager.
 _OPTION_TO_MINUTES = {
     "none": 0,
     "15_min": 15,
@@ -28,7 +26,6 @@ _OPTION_TO_MINUTES = {
     "60_min": 60,
     "120_min": 120,
     "240_min": 240,
-    "sunset": 9999,
 }
 _MINUTES_TO_OPTION = {v: k for k, v in _OPTION_TO_MINUTES.items()}
 
@@ -61,6 +58,9 @@ class AdaptiveCoverOverrideSelect(CoordinatorEntity, SelectEntity):
             "manual_override_duration", {"minutes": 15}
         )
         minutes = duration_dict.get("minutes", 15)
+        # Legacy compatibility: older builds stored "sunset" as 9999 minutes.
+        if minutes == 9999:
+            minutes = 240
         self._attr_current_option = _MINUTES_TO_OPTION.get(minutes, "60_min")
 
     @property

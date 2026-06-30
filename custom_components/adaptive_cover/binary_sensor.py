@@ -97,9 +97,16 @@ class AdaptiveCoverBinarySensor(
     @property
     def is_on(self) -> bool:
         """Return true if the binary sensor is on."""
-        return self.coordinator.data.states[self._key]
+        data = self.coordinator.data
+        if data is None:
+            return False
+        return bool(data.states[self._key])
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:  # noqa: D102
+        data = self.coordinator.data
+        if data is None:
+            return None
         if self._key == "manual_override":
-            return {"manual_controlled": self.coordinator.data.states["manual_list"]}
+            return {"manual_controlled": data.states["manual_list"]}
+        return None
