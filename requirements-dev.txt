@@ -1,6 +1,7 @@
 -r requirements.txt
-pre-commit~=3.7
-ruff~=0.4
+pre-commit==4.0.1
+ruff==0.9.1
+pytest>=8.0.0,<9.0.0
 colorlog~=6.8
 pvlib~=0.11
 matplotlib~=3.9

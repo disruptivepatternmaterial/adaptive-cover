@@ -52,9 +52,9 @@ version-resolver:
       - "refactor"
   default: patch
 
-prereleas-identifier: "beta"
+prerelease-identifier: "beta"
 
-exlude-contributors:
+exclude-contributors:
   - "dependabot"
 
 template: |

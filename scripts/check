@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+python3 -m ruff check custom_components scripts/validate_release_metadata.py tests/test_release_metadata_validator.py
+python3 -m ruff format --check scripts/validate_release_metadata.py tests/test_release_metadata_validator.py
+scripts/test
+python3 scripts/validate_release_metadata.py
