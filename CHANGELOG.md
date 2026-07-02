@@ -8,6 +8,20 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.10] — 2026-07-02
+
+### Fixed
+
+- **Manual override duration "none" now means never auto-reset.** `reset_if_needed` previously treated a zero duration as "reset on the next refresh", so the "Disabled" select option effectively disabled manual-override latching instead of the auto-reset. Manual reset via the reset button is unaffected.
+- **Settle tolerance floor.** Both `process_entity_state_change` and the manager's commanded-target guard now apply `MIN_SETTLE_TOLERANCE` (5%) as a floor over `manual_threshold`. A threshold of 0–4 could previously leave `wait_for_target` stuck on covers (ZHA/Tuya) that settle a few percent off the commanded position, suppressing later manual-override detection.
+- **Interpolation falsy-zero and double-snap.** `interpolate_states` discarded a configured start/end value of `0` as "unset" (`if self.start_value and self.end_value`), and the two independent endpoint-snap `if` blocks could double-snap when `new_range[-1] == 0`. Endpoints are now checked with `is not None` and snapping uses `elif`.
+
+### Added
+
+- Regression tests for all three fixes: zero/elapsed/unelapsed reset semantics, `settle_tolerance` floor, low-threshold settle, and interpolation zero-endpoint/snapping/passthrough (48 tests total).
+
+---
+
 ## [0.3.9] — 2026-06-30
 
 ### Added

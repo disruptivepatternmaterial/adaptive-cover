@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.9](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.9)
+**Current release:** [v0.3.10](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.10)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.9"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.10"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,13 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.10 — Residual manual-override and interpolation fixes
+
+- **"none" override duration now means never auto-reset** (was: reset on next refresh, despite the "Disabled" label). Manual reset via button unaffected.
+- **Settle tolerance has a 5% floor** over `manual_threshold`, so covers that settle a few percent off target (common on ZHA/Tuya) no longer get stuck in wait-for-target with thresholds of 0–4.
+- **Interpolation:** a configured start/end value of `0` is no longer discarded as unset, and endpoint snapping can no longer double-snap.
+- Regression tests for all three (48 tests total).
 
 ### v0.3.9 — Process and release hardening
 
