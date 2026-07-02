@@ -1,10 +1,10 @@
 {
   "domain": "adaptive_cover",
   "name": "Adaptive Cover (NET Fork)",
+  "after_dependencies": ["device_tracker", "zone", "climate", "sensor", "weather"],
   "codeowners": ["@disruptivepatternmaterial"],
   "config_flow": true,
   "dependencies": ["sun"],
-  "after_dependencies": ["device_tracker", "zone", "climate", "sensor", "weather"],
   "documentation": "https://github.com/disruptivepatternmaterial/adaptive-cover",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/disruptivepatternmaterial/adaptive-cover/issues",
