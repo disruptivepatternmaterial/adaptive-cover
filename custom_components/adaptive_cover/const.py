@@ -78,6 +78,11 @@ CONF_WINDOW_OPEN_HOLD = "window_open_hold"
 
 DEFAULT_WINDOW_OPEN_HOLD = 300
 
+# Covers (ZHA/Tuya) often settle a few percent off the commanded position;
+# never treat a report within this band as a missed target, even when the
+# user configured a smaller manual_threshold.
+MIN_SETTLE_TOLERANCE = 5
+
 STRATEGY_MODE_BASIC = "basic"
 STRATEGY_MODE_CLIMATE = "climate"
 STRATEGY_MODES = [

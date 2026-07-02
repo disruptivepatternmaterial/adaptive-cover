@@ -12,6 +12,7 @@ from custom_components.adaptive_cover.coordinator import (
     AdaptiveCoverManager,
     AdaptiveDataUpdateCoordinator,
     StateChangedData,
+    settle_tolerance,
 )
 
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
@@ -141,6 +142,75 @@ def test_process_entity_state_change_clears_target_with_tolerance() -> None:
     assert coordinator.wait_for_target["cover.kitchen"] is False
     assert coordinator.target_call["cover.kitchen"] == 100
     assert "cover.kitchen" not in coordinator._wait_for_target_started_at
+
+
+def test_settle_tolerance_enforces_floor() -> None:
+    """manual_threshold below 5 must not shrink the settle tolerance."""
+    assert settle_tolerance(None) == 5
+    assert settle_tolerance(0) == 5
+    assert settle_tolerance(3) == 5
+    assert settle_tolerance(10) == 10
+
+
+def test_process_entity_state_change_settles_with_low_threshold() -> None:
+    """A cover settling 2% off target must clear wait even with threshold=1."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator._cover_type = "cover_blind"
+    coordinator.ignore_intermediate_states = False
+    coordinator.manual_threshold = 1
+    coordinator.wait_for_target = {"cover.kitchen": True}
+    coordinator.target_call = {"cover.kitchen": 100}
+    coordinator._wait_for_target_started_at = {"cover.kitchen": time.monotonic()}
+    coordinator._WAIT_FOR_TARGET_TIMEOUT_S = 90
+    coordinator.state_change_data = StateChangedData(
+        "cover.kitchen",
+        old_state=SimpleNamespace(state="open", attributes={"current_position": 90}),
+        new_state=SimpleNamespace(state="open", attributes={"current_position": 98}),
+    )
+
+    coordinator.process_entity_state_change()
+
+    assert coordinator.wait_for_target["cover.kitchen"] is False
+    assert "cover.kitchen" not in coordinator._wait_for_target_started_at
+
+
+def test_interpolate_states_zero_endpoint_not_discarded() -> None:
+    """start_value=0 is a real configured endpoint (falsy-zero fix)."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator.start_value = 0
+    coordinator.end_value = 80
+    coordinator.normal_list = None
+    coordinator.new_list = None
+
+    assert coordinator.interpolate_states(50) == 40
+
+
+def test_interpolate_states_endpoint_snapping() -> None:
+    """Range edges snap to full close/open exactly once (elif fix)."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator.start_value = 20
+    coordinator.end_value = 80
+    coordinator.normal_list = None
+    coordinator.new_list = None
+
+    assert coordinator.interpolate_states(0) == 0
+    assert coordinator.interpolate_states(100) == 100
+    assert coordinator.interpolate_states(50) == 50
+
+
+def test_interpolate_states_no_config_passthrough() -> None:
+    """Without configured ranges, the state passes through unchanged."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator.start_value = None
+    coordinator.end_value = None
+    coordinator.normal_list = None
+    coordinator.new_list = None
+
+    assert coordinator.interpolate_states(42) == 42
 
 
 def test_process_entity_state_change_timeout_clears_stale_wait_state() -> None:

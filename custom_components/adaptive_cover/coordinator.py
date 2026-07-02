@@ -103,11 +103,22 @@ from .const import (
     DEFAULT_WINDOW_OPEN_HOLD,
     DOMAIN,
     LOGGER,
+    MIN_SETTLE_TOLERANCE,
 )
 from .helpers import get_datetime_from_str, get_last_updated, get_safe_state
 
 # Python 3.9 compatibility: datetime.UTC exists in 3.11+ only.
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
+
+
+def settle_tolerance(manual_threshold: int | None) -> int:
+    """Tolerance for deciding whether a cover reached its commanded target.
+
+    Uses the configured manual_threshold but never less than
+    MIN_SETTLE_TOLERANCE: a threshold of 0-4 would otherwise leave
+    wait_for_target stuck on covers that settle a few percent off target.
+    """
+    return max(manual_threshold or 0, MIN_SETTLE_TOLERANCE)
 
 
 def _normalize_manual_duration(raw_duration: dict | None) -> dict[str, int]:
@@ -493,7 +504,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 else "current_tilt_position"
             )
             target = self.target_call.get(entity_id)
-            tolerance = self.manual_threshold if self.manual_threshold is not None else 5
+            tolerance = settle_tolerance(self.manual_threshold)
             if (
                 position is not None
                 and target is not None
@@ -1185,16 +1196,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Interpolate states."""
         normal_range = [0, 100]
         new_range = []
-        if self.start_value and self.end_value:
+        # Explicit None checks: an endpoint of 0 is a valid configured value
+        # and must not be treated as "unset".
+        if self.start_value is not None and self.end_value is not None:
             new_range = [self.start_value, self.end_value]
         if self.normal_list and self.new_list:
             normal_range = list(map(int, self.normal_list))
             new_range = list(map(int, self.new_list))
         if new_range:
             state = np.interp(state, normal_range, new_range)
+            # At the range edges, command a true full close/open (upstream
+            # behavior for covers whose usable band excludes 0/100). elif
+            # prevents a double snap when new_range[-1] == 0.
             if state == new_range[0]:
                 state = 0
-            if state == new_range[-1]:
+            elif state == new_range[-1]:
                 state = 100
         return state
 
@@ -1356,7 +1372,7 @@ class AdaptiveCoverManager:
         if target_call is not None and entity_id in target_call:
             target = target_call.get(entity_id)
             if target is not None and new_position is not None:
-                tolerance = manual_threshold if manual_threshold is not None else 5
+                tolerance = settle_tolerance(manual_threshold)
                 if abs(target - new_position) <= tolerance:
                     self.logger.debug(
                         "Cover %s reached integration-commanded target %s "
@@ -1429,6 +1445,11 @@ class AdaptiveCoverManager:
 
     async def reset_if_needed(self):
         """Reset manual control state of the covers."""
+        # A zero (or negative) duration is the "none" select option and means
+        # "never auto-reset" — not "reset immediately". Manual reset stays
+        # available via the reset button.
+        if self.reset_duration <= dt.timedelta(0):
+            return
         current_time = dt.datetime.now(UTC)
         manual_control_time_copy = dict(self.manual_control_time)
         for entity_id, last_updated in manual_control_time_copy.items():
