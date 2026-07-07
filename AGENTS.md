@@ -28,6 +28,12 @@ For any behavior, config, workflow, or release change:
 
 ## Release discipline
 
+- Remote sync pre-flight (mechanical, not optional — a 2026-07-02 collision
+  shipped two parallel release lines):
+  - `git fetch origin` before starting work AND immediately before tagging;
+    abort and reconcile if your local base is not `origin/main`.
+  - `git ls-remote --tags origin` before choosing a version number; never
+    reuse or race an existing tag.
 - Keep release metadata synchronized:
   - `custom_components/adaptive_cover/manifest.json`
   - `pyproject.toml`

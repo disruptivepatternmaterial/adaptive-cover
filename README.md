@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.10](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.10)
+**Current release:** [v0.3.11](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.11)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.10"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.11"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,16 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.11 — Fix frozen sun tracking (manual-override false positives)
+
+Production-diagnosed regression fix. Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- Covers returning from `unavailable` no longer get latched as "manually controlled" (this froze adaptive drives for the 3-12 h reset duration, leaving only open/close bypass moves).
+- Wait-for-target timeout keeps the commanded-target exemption, so slow group traverses are not misclassified as manual.
+- Duration select displays hours-based durations honestly and never silently rewrites them.
+- Manual latches, clears, and blocked drives now log at INFO.
+- New lifecycle regression tests replay the production event sequences; new `docs/runbooks/production-verification.md` defines post-deploy pass criteria.
 
 ### v0.3.10 — Residual manual-override and interpolation fixes
 

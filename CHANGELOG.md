@@ -8,6 +8,22 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.11] — 2026-07-07
+
+### Fixed
+
+- **Covers returning from `unavailable` are no longer marked "manually controlled".** `async_check_cover_state_change` filtered only `unknown`; a cover reconnecting (ESPHome/ZHA blip, HA restart) re-reported its position and, when it differed from the calculated state by more than `manual_threshold`, was latched as manual for the full reset duration (3–12 h on real configs). Verified in production: a latch timestamp matched an `unavailable → open` transition to the second. This froze sun tracking so covers appeared to "just open and close". Both directions of availability transitions are now skipped.
+- **Wait-for-target timeout no longer discards the commanded-target exemption.** Covers slower than the 90 s timeout (e.g. group entities aggregating several shades) had `target_call` popped mid-travel, so their eventual settle report was misclassified as a manual move. Timeout now clears only the wait flag; the target is consumed on settle or replaced by the next drive.
+- **Manual-override duration select is honest about hours-based durations.** Durations stored by the options-flow DurationSelector (e.g. `{"hours": 3}`) displayed as "none" because only the `minutes` key was read; the select now computes total minutes and shows no selection when the stored duration has no matching option. It never rewrites the stored duration unless the user actively picks an option (previously constructing a selection silently replaced a 12 h duration with minutes-only values).
+
+### Added
+
+- **INFO-level operational logging:** marking a cover manual (with reported/calculated positions and the effective pause duration), clearing a latch, and — once per latch — skipping an adaptive drive because of manual override. Frozen covers are now diagnosable from the HA log instead of requiring storage inspection.
+- **Lifecycle regression tests** (`tests/test_manual_detection_lifecycle.py`) replaying the production event sequences from the 2026-07-07 investigation: availability blip, slow group traverse past the timeout, genuine external drive (must still latch), settle-then-drift classification, and duration-select honesty.
+- **Runbooks:** `docs/runbooks/production-verification.md` (post-deploy checks with the exact recorder queries and pass criteria) and a mandatory remote-sync pre-flight in `docs/runbooks/release.md` / `AGENTS.md`.
+
+---
+
 ## [0.3.10] — 2026-07-02
 
 ### Fixed
