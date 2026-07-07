@@ -300,8 +300,23 @@ _mod(
 )
 helpers_module.selector = sys.modules["homeassistant.helpers.selector"]
 _mod("homeassistant.helpers.sun", get_astral_location=lambda hass: (_Location(), 0))
+_mod(
+    "homeassistant.helpers.entity",
+    DeviceInfo=dict,
+)
+_mod(
+    "homeassistant.helpers.entity_platform",
+    AddEntitiesCallback=MagicMock,
+)
+
+
+class _SelectEntity:
+    """Minimal SelectEntity stand-in (distinct class to keep MRO valid)."""
+
+
 _mod("homeassistant.components")
 _mod("homeassistant.components.cover", DOMAIN="cover")
+_mod("homeassistant.components.select", SelectEntity=_SelectEntity)
 _mod(
     "homeassistant.components.diagnostics", async_redact_data=lambda data, _redact: data
 )
