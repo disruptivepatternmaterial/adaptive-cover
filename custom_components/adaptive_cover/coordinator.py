@@ -210,6 +210,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.wait_for_target = {}
         self.target_call = {}
         self._wait_for_target_started_at: dict[str, float] = {}
+        # Covers whose blocked-by-manual state has already been logged at
+        # INFO this latch period (prevents once-per-refresh log spam).
+        self._manual_skip_logged: set[str] = set()
         self.ignore_intermediate_states = config_entry.options.get(
             CONF_MANUAL_IGNORE_INTERMEDIATE, False
         )
@@ -477,12 +480,26 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.state_change_data = StateChangedData(
             data["entity_id"], data["old_state"], data["new_state"]
         )
-        if self.state_change_data.old_state.state != "unknown":
-            self.cover_state_change = True
-            self.process_entity_state_change()
-            await self.async_refresh()
-        else:
-            self.logger.debug("Old state is unknown, not processing")
+        # Transitions involving unavailable/unknown are availability changes,
+        # not movement. A cover reconnecting (ESPHome/ZHA blip, HA restart)
+        # re-reports its position; feeding that into manual-detect marks the
+        # cover "manually controlled" whenever its position differs from the
+        # calculated state, freezing adaptive control for the full reset
+        # duration. Verified in production 2026-07-07: library shade latched
+        # at the exact second of an unavailable->open(100) transition.
+        old = self.state_change_data.old_state.state
+        new = self.state_change_data.new_state.state
+        if old in ("unknown", "unavailable") or new in ("unknown", "unavailable"):
+            self.logger.debug(
+                "Availability transition for %s (%s -> %s); skipping manual-detect",
+                data["entity_id"],
+                old,
+                new,
+            )
+            return
+        self.cover_state_change = True
+        self.process_entity_state_change()
+        await self.async_refresh()
 
     def process_entity_state_change(self):
         """Process state change event."""
@@ -529,7 +546,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                         entity_id,
                         target,
                     )
-                    self._clear_wait_for_target(entity_id)
+                    # Keep target_call: slow covers (e.g. group entities
+                    # aggregating several shades) legitimately take longer
+                    # than the timeout. Dropping the target here would strip
+                    # the commanded-target exemption mid-travel and the
+                    # eventual settle report would be misclassified as a
+                    # manual move. The manager pops the target when the cover
+                    # settles within tolerance; the next drive overwrites it.
+                    self._clear_wait_for_target(entity_id, clear_target=False)
             self.logger.debug("Wait for target: %s", self.wait_for_target)
         else:
             self.logger.debug("No wait for target call for %s", entity_id)
@@ -702,11 +726,12 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return
         if self.control_toggle:
             for cover in self.entities:
-                if (
-                    self.check_adaptive_time
-                    and not self.manager.is_cover_manual(cover)
-                    and self.check_position_delta(cover, state, options)
+                if self.check_adaptive_time and self.check_position_delta(
+                    cover, state, options
                 ):
+                    if self.manager.is_cover_manual(cover):
+                        self._log_manual_skip(cover, state)
+                        continue
                     await self.async_set_position(cover, state)
         else:
             self.logger.debug("First refresh but control toggle is off")
@@ -748,9 +773,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.check_adaptive_time
             and self.check_position_delta(entity, state, options)
             and self.check_time_delta(entity)
-            and not self.manager.is_cover_manual(entity)
         ):
+            if self.manager.is_cover_manual(entity):
+                self._log_manual_skip(entity, state)
+                return
+            self._manual_skip_logged.discard(entity)
             await self.async_set_position(entity, state)
+
+    def _log_manual_skip(self, entity: str, state: int) -> None:
+        """Log at INFO, once per latch, that a drive was blocked by manual override."""
+        if entity in self._manual_skip_logged:
+            return
+        self._manual_skip_logged.add(entity)
+        self.logger.info(
+            "Adaptive drive to %s skipped for %s: manual override is active "
+            "(clears per configured duration or via the reset button)",
+            state,
+            entity,
+        )
 
     @property
     def is_window_open(self) -> bool:
@@ -1404,16 +1444,25 @@ class AdaptiveCoverManager:
                     entity_id,
                 )
                 return
-            self.logger.debug(
-                "Manual change detected for %s. Our state: %s, new state: %s",
+            # INFO on purpose: a manual latch pauses adaptive control for
+            # hours and must be diagnosable from the HA log, not just the
+            # binary_sensor. This fires at most once per external move.
+            self.logger.info(
+                "Manual override detected for %s: reported position %s deviates "
+                "from calculated %s (threshold %s); adaptive control paused %s",
                 entity_id,
-                our_state,
                 new_position,
+                our_state,
+                manual_threshold,
+                (
+                    "until manually reset"
+                    if self.reset_duration <= dt.timedelta(0)
+                    else f"for {self.reset_duration}"
+                ),
             )
             self.logger.debug(
-                "Set manual control for %s, for at least %s seconds, reset_allowed: %s",
+                "Set manual control for %s, reset_allowed: %s",
                 entity_id,
-                self.reset_duration.total_seconds(),
                 allow_reset,
             )
             self.mark_manual_control(entity_id)
@@ -1462,9 +1511,14 @@ class AdaptiveCoverManager:
 
     def reset(self, entity_id):
         """Reset manual control for a cover."""
+        was_manual = self.manual_control.get(entity_id, False)
         self.manual_control[entity_id] = False
         self.manual_control_time.pop(entity_id, None)
-        self.logger.debug("Reset manual override for %s", entity_id)
+        if was_manual:
+            self.logger.info(
+                "Manual override cleared for %s; resuming adaptive control",
+                entity_id,
+            )
         self._schedule_save()
 
     def is_cover_manual(self, entity_id):

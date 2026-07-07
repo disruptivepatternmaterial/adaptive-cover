@@ -213,8 +213,13 @@ def test_interpolate_states_no_config_passthrough() -> None:
     assert coordinator.interpolate_states(42) == 42
 
 
-def test_process_entity_state_change_timeout_clears_stale_wait_state() -> None:
-    """Stale wait_for_target should be cleared after timeout."""
+def test_process_entity_state_change_timeout_clears_wait_keeps_target() -> None:
+    """Timeout clears wait state but must keep the commanded-target exemption.
+
+    Slow covers (group entities aggregating several shades) legitimately
+    exceed the timeout mid-travel; dropping the target here caused their
+    eventual settle report to be misclassified as a manual move.
+    """
     coordinator = _coordinator_shell()
     coordinator.logger = MagicMock()
     coordinator._cover_type = "cover_blind"
@@ -233,7 +238,8 @@ def test_process_entity_state_change_timeout_clears_stale_wait_state() -> None:
     coordinator.process_entity_state_change()
 
     assert coordinator.wait_for_target["cover.office"] is False
-    assert "cover.office" not in coordinator.target_call
+    assert coordinator.target_call["cover.office"] == 100
+    assert "cover.office" not in coordinator._wait_for_target_started_at
     coordinator.logger.warning.assert_called_once()
 
 
