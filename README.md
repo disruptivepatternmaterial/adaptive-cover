@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.11](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.11)
+**Current release:** [v0.3.12](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.12)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.11"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.12"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,10 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.12 — Summer mode respects cloud / dim gates
+
+Climate summer mode no longer ignores overcast or lux/irradiance dim conditions. When cloud cover is high (or the weather-state allow-list does not match), shades use the configured default instead of anti-glare close / force-close. Same gate applies to tilt. New installs omit `cloudy` from the default weather allow-list.
 
 ### v0.3.11 — Fix frozen sun tracking (manual-override false positives)
 
@@ -271,13 +275,14 @@ Uses sun elevation/azimuth and field-of-view to compute shade position. Outside 
 Split into presence and no-presence strategies:
 
 **With occupants:**
-- **Winter** (temp below `temp_low`) + sun in window → fully open (100%) for solar gain
-- Not summer + dim/cloudy → default position
-- Summer + transparent blind → fully closed (0%)
+- **Winter** (temp below `temp_low`) + sun in window → fully open (100%) for solar gain (cloud/dim ignored)
+- Dim/cloudy (lux, irradiance, or not sunny — including summer) → default position
+- Summer + sunny + transparent blind → fully closed (0%)
 - Otherwise → anti-glare geometric calculation
 
 **Without occupants:**
-- Summer + sun in window → fully closed
+- Summer + sun in window + sunny → fully closed
+- Summer + overcast → default position
 - Winter + sun in window → fully open
 - Otherwise → default position
 

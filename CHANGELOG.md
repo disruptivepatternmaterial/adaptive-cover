@@ -8,6 +8,19 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.12] — 2026-07-28
+
+### Fixed
+
+- **Summer climate mode no longer ignores overcast / dim conditions.** The lux / irradiance / `is_sunny` brightness gate previously ran only when `not is_summer`, so cloud cover above 65% (or a non-matching weather state) still drove anti-glare geometry or force-close to 0%. The gate now applies in summer for both presence and no-presence paths (normal and tilt). Winter solar-gain open is unchanged.
+- **Default weather allow-list no longer includes `cloudy`.** New setups default to `sunny` / `partlycloudy` / `clear`. Existing entries keep their stored list — remove `cloudy` from Configure → Weather if weather-state fallback was treating overcast as sunny.
+
+### Added
+
+- Regression tests in `tests/test_climate_cloud_gate.py` for summer + 90% cloud on normal and tilt paths.
+
+---
+
 ## [0.3.11] — 2026-07-07
 
 ### Fixed

@@ -10,6 +10,7 @@ This document defines runtime behavior that should remain stable across feature 
 | Startup gating | First automatic drive is deferred until expected switch restore is complete; empty switch set marks restored immediately. |
 | Wait-for-target safety | Integration-commanded moves set wait state; stale waits clear by timeout and completed waits do not trigger false manual detection. |
 | Window latch behavior | If configured window/door sensors transition on->off, a timed refresh re-evaluates after hold duration; stale latch timers are canceled on reschedule/unload. |
+| Climate brightness gate | Outside winter, lux-dim / irradiance-dim / not-sunny (cloud coverage or weather allow-list) uses default position, including in summer; summer force-close and transparent-blind close require sunny. |
 | Time window checks | Start/end checks must handle aware/naive datetimes safely and treat unparseable values as non-driving conditions rather than crashes. |
 | Forecast fallback | Forecast caching uses longer TTL for successful fetches and shorter retry TTL after failures/unavailable entities. |
 | Diagnostics safety | Diagnostics redact configured entity references and expose runtime summaries without raw entity identifiers. |
