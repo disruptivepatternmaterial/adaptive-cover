@@ -302,7 +302,9 @@ CLIMATE_OPTIONS = vol.Schema(
 WEATHER_OPTIONS = vol.Schema(
     {
         vol.Optional(
-            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "cloudy", "clear"]
+            # Omit "cloudy": with no cloud-% sensor, weather state "cloudy"
+            # must not count as sunny (that defeated the overcast gate).
+            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "clear"]
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 multiple=True,
