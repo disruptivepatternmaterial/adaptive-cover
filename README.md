@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.12](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.12)
+**Current release:** [v0.3.13](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.13)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.12"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.13"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,10 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.13 — Manual override latches on user stop during an adaptive drive
+
+Stopping a shade during an integration-commanded move now marks it manually controlled. Intermediate travel reports and `open`→`open` position ticks are still ignored. Full details in [CHANGELOG.md](CHANGELOG.md).
 
 ### v0.3.12 — Summer mode respects cloud / dim gates
 
