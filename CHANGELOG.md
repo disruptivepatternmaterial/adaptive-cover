@@ -8,7 +8,7 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ### Fixed
 
-- **Manual override latches when you stop a shade during an adaptive drive.** `wait_for_target` previously swallowed every settled report until the 90 s timeout, and disabling detection popped `target_call` while leaving that wait flag set, so later moves never latched. Settling off-target now marks manual; mid-travel `opening`/`closing` is still ignored.
+- **Manual override latches when you stop a shade during an adaptive drive.** `wait_for_target` previously swallowed every settled report until the 90 s timeout, and disabling detection popped `target_call` while leaving that wait flag set, so later moves never latched. A travel→settled report off the commanded target now marks manual and drops the stale target. Mid-travel `opening`/`closing`, and `open`→`open` position ticks during a commanded drive, are still ignored. Cover events before switch restore no longer consume command-tracking.
 
 ---
 

@@ -260,6 +260,56 @@ class TestGenuineExternalMove:
 
         assert manager.is_cover_manual("cover.library_shades") is True
         assert wait["cover.library_shades"] is False
+        assert "cover.library_shades" not in target_call
+
+    def test_open_to_open_tick_during_wait_is_not_manual(self):
+        """Position ticks that stay open during a commanded drive are not a stop."""
+        manager = _make_manager()
+        wait = {"cover.library_shades": True}
+        target_call = {"cover.library_shades": 100}
+        event = StateChangedData(
+            "cover.library_shades",
+            old_state=_cover_state("open", 30),
+            new_state=_cover_state("open", 40),
+        )
+
+        manager.handle_state_change(
+            event,
+            our_state=20,
+            blind_type="cover_blind",
+            allow_reset=False,
+            wait_target_call=wait,
+            manual_threshold=10,
+            target_call=target_call,
+        )
+
+        assert manager.is_cover_manual("cover.library_shades") is False
+        assert wait["cover.library_shades"] is True
+        assert target_call["cover.library_shades"] == 100
+
+    def test_timeout_opening_event_does_not_latch(self):
+        """After wait times out, an opening report must not consume the target."""
+        manager = _make_manager()
+        wait = {"cover.library_shades": False}
+        target_call = {"cover.library_shades": 100}
+        event = StateChangedData(
+            "cover.library_shades",
+            old_state=_cover_state("opening", 40),
+            new_state=_cover_state("opening", 55),
+        )
+
+        manager.handle_state_change(
+            event,
+            our_state=20,
+            blind_type="cover_blind",
+            allow_reset=False,
+            wait_target_call=wait,
+            manual_threshold=10,
+            target_call=target_call,
+        )
+
+        assert manager.is_cover_manual("cover.library_shades") is False
+        assert target_call["cover.library_shades"] == 100
 
     def test_mid_travel_during_wait_is_not_manual(self):
         """opening/closing reports while wait is active must not latch."""

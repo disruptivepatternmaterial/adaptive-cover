@@ -711,6 +711,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.manual_threshold,
                 target_call=self.target_call,
             )
+            if self.state_change_data is not None:
+                entity_id = self.state_change_data.entity_id
+                if not self.wait_for_target.get(entity_id):
+                    self._wait_for_target_started_at.pop(entity_id, None)
         elif self.state_change_data is not None:
             # Manual detection is disabled; drop wait AND target together.
             # Popping only target_call left wait_for_target stuck True with
@@ -1397,29 +1401,39 @@ class AdaptiveCoverManager:
         entity_id = event.entity_id
         if entity_id not in self.covers:
             return
-        new_state_name = (
-            None if event.new_state is None else event.new_state.state
-        )
-        if wait_target_call.get(entity_id) and new_state_name in (
-            "opening",
-            "closing",
-        ):
-            # Mid-travel reports of an integration-commanded move are not
-            # manual. A settled report at a different position falls through.
-            return
-        if wait_target_call.get(entity_id):
-            # Cover settled (or reported a non-travel state) while a
-            # command was in flight. Drop the wait flag so the target
-            # guard below can exempt a match, and a user stop elsewhere
-            # can latch as manual.
-            wait_target_call[entity_id] = False
-
         new_state = event.new_state
+        if new_state is None:
+            return
+        new_state_name = new_state.state
+        old_state_name = (
+            None if event.old_state is None else event.old_state.state
+        )
+        waiting = bool(wait_target_call.get(entity_id))
+        target = None if target_call is None else target_call.get(entity_id)
+        has_commanded_target = target is not None
 
         if blind_type == "cover_tilt":
             new_position = new_state.attributes.get("current_tilt_position")
         else:
             new_position = new_state.attributes.get("current_position")
+
+        # Mid-travel of an integration-commanded move is not manual, even
+        # after wait_for_target timed out (target_call still pending).
+        if new_state_name in ("opening", "closing") and (
+            waiting or has_commanded_target
+        ):
+            return
+        # Position ticks that stay "open"/"closed" (no travel states) are
+        # also mid-drive, not a user stop. A user stop is travel→settled
+        # at a position that is not the commanded target.
+        if (
+            waiting
+            and old_state_name in ("open", "closed")
+            and new_state_name in ("open", "closed")
+        ):
+            return
+        if waiting:
+            wait_target_call[entity_id] = False
 
         # The integration just commanded this position; not a manual
         # change. Without this guard, integration-initiated drives to a
@@ -1431,22 +1445,23 @@ class AdaptiveCoverManager:
         # commanded target by a few percent (e.g. commanded 100,
         # reported 99) so we allow a tolerance equal to the user-
         # configured `manual_threshold` (the same window used below for
-        # human-vs-machine deviation), with a 5% floor when not set.
-        if target_call is not None and entity_id in target_call:
-            target = target_call.get(entity_id)
-            if target is not None and new_position is not None:
-                tolerance = settle_tolerance(manual_threshold)
-                if abs(target - new_position) <= tolerance:
-                    self.logger.debug(
-                        "Cover %s reached integration-commanded target %s "
-                        "(reported %s, tolerance %s); skipping manual-detect",
-                        entity_id,
-                        target,
-                        new_position,
-                        tolerance,
-                    )
-                    target_call.pop(entity_id, None)
-                    return
+        # human-vs-machine detection), with a 5% floor when not set.
+        if has_commanded_target and new_position is not None:
+            tolerance = settle_tolerance(manual_threshold)
+            if abs(target - new_position) <= tolerance:
+                self.logger.debug(
+                    "Cover %s reached integration-commanded target %s "
+                    "(reported %s, tolerance %s); skipping manual-detect",
+                    entity_id,
+                    target,
+                    new_position,
+                    tolerance,
+                )
+                target_call.pop(entity_id, None)
+                return
+            # Off-target settle: drop the stale command so a later report
+            # near the old target cannot be exempted as "commanded".
+            target_call.pop(entity_id, None)
 
         if new_position is None:
             self.logger.debug(

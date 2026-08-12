@@ -360,6 +360,8 @@ Split into presence and no-presence strategies:
 
 When a cover moves to a position that differs from the integration's last commanded target by more than the configured `manual_threshold` (default 5%), the cover is marked as manually controlled. While marked manual, the integration stops driving that cover.
 
+Stopping a shade during an adaptive drive (travel state → settled at a different position) is treated as a manual hold. Intermediate `opening`/`closing` reports, and position ticks that stay `open`/`closed` while a command is in flight, are not.
+
 The manual hold expires after `manual_override_duration` (configurable per entry). It also persists across HA restarts — the integration saves manual state to HA's `.storage/adaptive_cover.{entry_id}.manual_state` and restores it on startup.
 
 ZHA/Tuya covers commonly report `current_position` 1–2% off from the commanded value (e.g. commanded 100, reported 99). The `manual_threshold` tolerance handles this — the integration distinguishes its own drives from human intervention.

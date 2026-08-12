@@ -164,6 +164,7 @@ def test_process_entity_state_change_clears_wait_when_target_missing() -> None:
     coordinator.process_entity_state_change()
 
     assert coordinator.wait_for_target["cover.kitchen"] is False
+    assert "cover.kitchen" not in coordinator._wait_for_target_started_at
 
 
 def test_toggles_off_clears_wait_and_target() -> None:
@@ -188,6 +189,31 @@ def test_toggles_off_clears_wait_and_target() -> None:
 
     assert coordinator.wait_for_target["cover.kitchen"] is False
     assert "cover.kitchen" not in coordinator.target_call
+    coordinator.manager.handle_state_change.assert_not_called()
+
+
+def test_pre_restore_cover_change_preserves_wait_and_target() -> None:
+    """Cover events before switch restore must not consume command-tracking."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator._manual_toggle = None
+    coordinator._control_toggle = None
+    coordinator._switches_restored = False
+    coordinator.cover_state_change = True
+    coordinator.wait_for_target = {"cover.kitchen": True}
+    coordinator.target_call = {"cover.kitchen": 100}
+    coordinator._wait_for_target_started_at = {"cover.kitchen": time.monotonic()}
+    coordinator.manager = MagicMock()
+    coordinator.state_change_data = StateChangedData(
+        "cover.kitchen",
+        old_state=SimpleNamespace(state="open", attributes={"current_position": 100}),
+        new_state=SimpleNamespace(state="closed", attributes={"current_position": 0}),
+    )
+
+    _run(coordinator.async_handle_cover_state_change(100))
+
+    assert coordinator.wait_for_target["cover.kitchen"] is True
+    assert coordinator.target_call["cover.kitchen"] == 100
     coordinator.manager.handle_state_change.assert_not_called()
 
 
