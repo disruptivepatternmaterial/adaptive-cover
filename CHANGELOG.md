@@ -6,6 +6,10 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ## [Unreleased]
 
+### Fixed
+
+- **Manual override latches when you stop a shade during an adaptive drive.** `wait_for_target` previously swallowed every settled report until the 90 s timeout, and disabling detection popped `target_call` while leaving that wait flag set, so later moves never latched. Settling off-target now marks manual; mid-travel `opening`/`closing` is still ignored.
+
 ---
 
 ## [0.3.12] — 2026-07-28

@@ -522,9 +522,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             target = self.target_call.get(entity_id)
             tolerance = settle_tolerance(self.manual_threshold)
-            if (
+            if target is None:
+                self._clear_wait_for_target(entity_id, clear_target=True)
+            elif (
                 position is not None
-                and target is not None
                 and abs(position - target) <= tolerance
             ):
                 self._clear_wait_for_target(entity_id, clear_target=False)
@@ -697,7 +698,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_handle_cover_state_change(self, state: int):
         """Handle state change from assigned covers."""
-        if self.manual_toggle and self.control_toggle:
+        if self._manual_toggle is None or not self._switches_restored:
+            # Switches have not restored yet; do not consume command-tracking.
+            pass
+        elif self.manual_toggle and self.control_toggle:
             self.manager.handle_state_change(
                 self.state_change_data,
                 state,
@@ -708,8 +712,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 target_call=self.target_call,
             )
         elif self.state_change_data is not None:
-            # Manual detection is disabled; avoid keeping stale command targets.
-            self.target_call.pop(self.state_change_data.entity_id, None)
+            # Manual detection is disabled; drop wait AND target together.
+            # Popping only target_call left wait_for_target stuck True with
+            # target None, which suppressed detection after the switch was
+            # turned back on (production 2026-08-12).
+            self._clear_wait_for_target(
+                self.state_change_data.entity_id, clear_target=True
+            )
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
 
@@ -1388,8 +1397,22 @@ class AdaptiveCoverManager:
         entity_id = event.entity_id
         if entity_id not in self.covers:
             return
-        if wait_target_call.get(entity_id):
+        new_state_name = (
+            None if event.new_state is None else event.new_state.state
+        )
+        if wait_target_call.get(entity_id) and new_state_name in (
+            "opening",
+            "closing",
+        ):
+            # Mid-travel reports of an integration-commanded move are not
+            # manual. A settled report at a different position falls through.
             return
+        if wait_target_call.get(entity_id):
+            # Cover settled (or reported a non-travel state) while a
+            # command was in flight. Drop the wait flag so the target
+            # guard below can exempt a match, and a user stop elsewhere
+            # can latch as manual.
+            wait_target_call[entity_id] = False
 
         new_state = event.new_state
 

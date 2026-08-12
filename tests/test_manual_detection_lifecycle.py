@@ -237,6 +237,55 @@ class TestGenuineExternalMove:
         assert manager.is_cover_manual("cover.library_shades") is True
         manager.logger.info.assert_called()
 
+    def test_user_stop_during_wait_marks_manual(self):
+        """A settled position that is not the commanded target is manual."""
+        manager = _make_manager()
+        wait = {"cover.library_shades": True}
+        target_call = {"cover.library_shades": 100}
+        event = StateChangedData(
+            "cover.library_shades",
+            old_state=_cover_state("opening", 40),
+            new_state=_cover_state("open", 19),
+        )
+
+        manager.handle_state_change(
+            event,
+            our_state=100,
+            blind_type="cover_blind",
+            allow_reset=False,
+            wait_target_call=wait,
+            manual_threshold=10,
+            target_call=target_call,
+        )
+
+        assert manager.is_cover_manual("cover.library_shades") is True
+        assert wait["cover.library_shades"] is False
+
+    def test_mid_travel_during_wait_is_not_manual(self):
+        """opening/closing reports while wait is active must not latch."""
+        manager = _make_manager()
+        wait = {"cover.library_shades": True}
+        target_call = {"cover.library_shades": 100}
+        event = StateChangedData(
+            "cover.library_shades",
+            old_state=_cover_state("closed", 0),
+            new_state=_cover_state("opening", 40),
+        )
+
+        manager.handle_state_change(
+            event,
+            our_state=100,
+            blind_type="cover_blind",
+            allow_reset=False,
+            wait_target_call=wait,
+            manual_threshold=10,
+            target_call=target_call,
+        )
+
+        assert manager.is_cover_manual("cover.library_shades") is False
+        assert wait["cover.library_shades"] is True
+        assert target_call["cover.library_shades"] == 100
+
     def test_reset_logs_resume(self):
         """Clearing a latched cover logs at INFO."""
         manager = _make_manager()
