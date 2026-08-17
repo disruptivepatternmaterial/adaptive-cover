@@ -8,6 +8,57 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.13] — 2026-08-12
+
+### Fixed
+
+- **Manual override latches when you stop a shade during an adaptive drive.** `wait_for_target` previously swallowed every settled report until the 90 s timeout, and disabling detection popped `target_call` while leaving that wait flag set, so later moves never latched. A travel→settled report off the commanded target now marks manual and drops the stale target. Mid-travel `opening`/`closing`, and `open`→`open` position ticks during a commanded drive, are still ignored. Cover events before switch restore no longer consume command-tracking.
+
+---
+
+## [0.3.12] — 2026-07-28
+
+### Fixed
+
+- **Summer climate mode no longer ignores overcast / dim conditions.** The lux / irradiance / `is_sunny` brightness gate previously ran only when `not is_summer`, so cloud cover above 65% (or a non-matching weather state) still drove anti-glare geometry or force-close to 0%. The gate now applies in summer for both presence and no-presence paths (normal and tilt). Winter solar-gain open is unchanged.
+- **Default weather allow-list no longer includes `cloudy`.** New setups default to `sunny` / `partlycloudy` / `clear`. Existing entries keep their stored list — remove `cloudy` from Configure → Weather if weather-state fallback was treating overcast as sunny.
+
+### Added
+
+- Regression tests in `tests/test_climate_cloud_gate.py` for summer + 90% cloud on normal and tilt paths.
+
+---
+
+## [0.3.11] — 2026-07-07
+
+### Fixed
+
+- **Covers returning from `unavailable` are no longer marked "manually controlled".** `async_check_cover_state_change` filtered only `unknown`; a cover reconnecting (ESPHome/ZHA blip, HA restart) re-reported its position and, when it differed from the calculated state by more than `manual_threshold`, was latched as manual for the full reset duration (3–12 h on real configs). Verified in production: a latch timestamp matched an `unavailable → open` transition to the second. This froze sun tracking so covers appeared to "just open and close". Both directions of availability transitions are now skipped.
+- **Wait-for-target timeout no longer discards the commanded-target exemption.** Covers slower than the 90 s timeout (e.g. group entities aggregating several shades) had `target_call` popped mid-travel, so their eventual settle report was misclassified as a manual move. Timeout now clears only the wait flag; the target is consumed on settle or replaced by the next drive.
+- **Manual-override duration select is honest about hours-based durations.** Durations stored by the options-flow DurationSelector (e.g. `{"hours": 3}`) displayed as "none" because only the `minutes` key was read; the select now computes total minutes and shows no selection when the stored duration has no matching option. It never rewrites the stored duration unless the user actively picks an option (previously constructing a selection silently replaced a 12 h duration with minutes-only values).
+
+### Added
+
+- **INFO-level operational logging:** marking a cover manual (with reported/calculated positions and the effective pause duration), clearing a latch, and — once per latch — skipping an adaptive drive because of manual override. Frozen covers are now diagnosable from the HA log instead of requiring storage inspection.
+- **Lifecycle regression tests** (`tests/test_manual_detection_lifecycle.py`) replaying the production event sequences from the 2026-07-07 investigation: availability blip, slow group traverse past the timeout, genuine external drive (must still latch), settle-then-drift classification, and duration-select honesty.
+- **Runbooks:** `docs/runbooks/production-verification.md` (post-deploy checks with the exact recorder queries and pass criteria) and a mandatory remote-sync pre-flight in `docs/runbooks/release.md` / `AGENTS.md`.
+
+---
+
+## [0.3.10] — 2026-07-02
+
+### Fixed
+
+- **Manual override duration "none" now means never auto-reset.** `reset_if_needed` previously treated a zero duration as "reset on the next refresh", so the "Disabled" select option effectively disabled manual-override latching instead of the auto-reset. Manual reset via the reset button is unaffected.
+- **Settle tolerance floor.** Both `process_entity_state_change` and the manager's commanded-target guard now apply `MIN_SETTLE_TOLERANCE` (5%) as a floor over `manual_threshold`. A threshold of 0–4 could previously leave `wait_for_target` stuck on covers (ZHA/Tuya) that settle a few percent off the commanded position, suppressing later manual-override detection.
+- **Interpolation falsy-zero and double-snap.** `interpolate_states` discarded a configured start/end value of `0` as "unset" (`if self.start_value and self.end_value`), and the two independent endpoint-snap `if` blocks could double-snap when `new_range[-1] == 0`. Endpoints are now checked with `is not None` and snapping uses `elif`.
+
+### Added
+
+- Regression tests for all three fixes: zero/elapsed/unelapsed reset semantics, `settle_tolerance` floor, low-threshold settle, and interpolation zero-endpoint/snapping/passthrough (48 tests total).
+
+---
+
 ## [0.3.9] — 2026-06-30
 
 ### Added

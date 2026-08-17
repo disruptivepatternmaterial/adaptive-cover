@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.9](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.9)
+**Current release:** [v0.3.13](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.13)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.9"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.13"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,31 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.13 — Manual override latches on user stop during an adaptive drive
+
+Stopping a shade during an integration-commanded move now marks it manually controlled. Intermediate travel reports and `open`→`open` position ticks are still ignored. Full details in [CHANGELOG.md](CHANGELOG.md).
+
+### v0.3.12 — Summer mode respects cloud / dim gates
+
+Climate summer mode no longer ignores overcast or lux/irradiance dim conditions. When cloud cover is high (or the weather-state allow-list does not match), shades use the configured default instead of anti-glare close / force-close. Same gate applies to tilt. New installs omit `cloudy` from the default weather allow-list.
+
+### v0.3.11 — Fix frozen sun tracking (manual-override false positives)
+
+Production-diagnosed regression fix. Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- Covers returning from `unavailable` no longer get latched as "manually controlled" (this froze adaptive drives for the 3-12 h reset duration, leaving only open/close bypass moves).
+- Wait-for-target timeout keeps the commanded-target exemption, so slow group traverses are not misclassified as manual.
+- Duration select displays hours-based durations honestly and never silently rewrites them.
+- Manual latches, clears, and blocked drives now log at INFO.
+- New lifecycle regression tests replay the production event sequences; new `docs/runbooks/production-verification.md` defines post-deploy pass criteria.
+
+### v0.3.10 — Residual manual-override and interpolation fixes
+
+- **"none" override duration now means never auto-reset** (was: reset on next refresh, despite the "Disabled" label). Manual reset via button unaffected.
+- **Settle tolerance has a 5% floor** over `manual_threshold`, so covers that settle a few percent off target (common on ZHA/Tuya) no longer get stuck in wait-for-target with thresholds of 0–4.
+- **Interpolation:** a configured start/end value of `0` is no longer discarded as unset, and endpoint snapping can no longer double-snap.
+- Regression tests for all three (48 tests total).
 
 ### v0.3.9 — Process and release hardening
 
@@ -254,13 +279,14 @@ Uses sun elevation/azimuth and field-of-view to compute shade position. Outside 
 Split into presence and no-presence strategies:
 
 **With occupants:**
-- **Winter** (temp below `temp_low`) + sun in window → fully open (100%) for solar gain
-- Not summer + dim/cloudy → default position
-- Summer + transparent blind → fully closed (0%)
+- **Winter** (temp below `temp_low`) + sun in window → fully open (100%) for solar gain (cloud/dim ignored)
+- Dim/cloudy (lux, irradiance, or not sunny — including summer) → default position
+- Summer + sunny + transparent blind → fully closed (0%)
 - Otherwise → anti-glare geometric calculation
 
 **Without occupants:**
-- Summer + sun in window → fully closed
+- Summer + sun in window + sunny → fully closed
+- Summer + overcast → default position
 - Winter + sun in window → fully open
 - Otherwise → default position
 
@@ -337,6 +363,8 @@ Split into presence and no-presence strategies:
 ## How Manual Override Detection Works
 
 When a cover moves to a position that differs from the integration's last commanded target by more than the configured `manual_threshold` (default 5%), the cover is marked as manually controlled. While marked manual, the integration stops driving that cover.
+
+Stopping a shade during an adaptive drive (travel state → settled at a different position) is treated as a manual hold. Intermediate `opening`/`closing` reports, and position ticks that stay `open`/`closed` while a command is in flight, are not.
 
 The manual hold expires after `manual_override_duration` (configurable per entry). It also persists across HA restarts — the integration saves manual state to HA's `.storage/adaptive_cover.{entry_id}.manual_state` and restores it on startup.
 

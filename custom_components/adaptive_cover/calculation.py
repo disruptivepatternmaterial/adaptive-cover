@@ -509,6 +509,7 @@ class ClimateCoverState(NormalCoverState):
         """Determine state for horizontal and vertical covers with occupants."""
         is_summer = self.climate_data.is_summer
         is_winter = self.climate_data.is_winter
+        is_sunny = self.climate_data.is_sunny
 
         # Winter wins regardless of brightness: if it's cold enough for the
         # configured temp_low (per the user's Temperature Toggle source),
@@ -527,20 +528,23 @@ class ClimateCoverState(NormalCoverState):
             )
             return self.cover.default
 
-        # Not-summer + brightness gate: lux dim, irradiance dim, or overcast.
-        # is_winter is no longer checked here (it's handled above).
-        if not is_summer and (
+        # Brightness gate for all non-winter seasons (including summer): lux
+        # dim, irradiance dim, or overcast. Summer previously skipped this
+        # gate (`not is_summer and ...`), so high cloud cover still ran
+        # anti-glare geometry / transparent-blind full close.
+        if (
             self.climate_data.lux
             or self.climate_data.irradiance
-            or not self.climate_data.is_sunny
+            or not is_sunny
         ):
             self.cover.logger.debug(
-                "n_w_p(): not summer + dim/cloudy -> default (%s)",
+                "n_w_p(): dim/cloudy -> default (%s) (summer=%s)",
                 self.cover.default,
+                is_summer,
             )
             return self.cover.default
 
-        # Summer + transparent blind: full close.
+        # Summer + transparent blind: full close (only when actually sunny).
         if is_summer and self.climate_data.transparent_blind:
             return 0
 
@@ -552,6 +556,9 @@ class ClimateCoverState(NormalCoverState):
         """Determine state for horizontal and vertical covers without occupants."""
         if self.cover.valid:
             if self.climate_data.is_summer:
+                # Overcast: keep default for daylight instead of force-close.
+                if not self.climate_data.is_sunny:
+                    return self.cover.default
                 return 0
             if self.climate_data.is_winter:
                 return 100
@@ -559,15 +566,14 @@ class ClimateCoverState(NormalCoverState):
 
     def tilt_with_presence(self, degrees: int) -> int:
         """Determine state for tilted blinds with occupants."""
-        if self.cover.valid and (
+        # Align with normal_with_presence: overcast / dim → default, not a
+        # summer partial-close (previously 45°) or geometry chase.
+        if (
             self.climate_data.lux
             or self.climate_data.irradiance
             or not self.climate_data.is_sunny
         ):
-            if self.climate_data.is_summer:
-                # If it's summer, return 45 degrees
-                return 45 / degrees * 100
-            return super().get_state()
+            return self.cover.default
         return 80 / degrees * 100
 
     def tilt_without_presence(self, degrees: int) -> int:
@@ -575,7 +581,9 @@ class ClimateCoverState(NormalCoverState):
         beta = np.rad2deg(self.cover.beta)
         if self.cover.valid:
             if self.climate_data.is_summer:
-                # block out all light in summer
+                # Mirror normal_without_presence: only force-close when sunny.
+                if not self.climate_data.is_sunny:
+                    return self.cover.default
                 return 0
             if self.climate_data.is_winter and self.cover.mode == "mode2":
                 # parallel to sun beams, not possible with single direction

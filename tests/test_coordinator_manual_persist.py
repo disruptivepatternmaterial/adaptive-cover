@@ -146,6 +146,51 @@ class TestManualStateSaveOnMutation:
 
 
 # ---------------------------------------------------------------------------
+# Auto-reset semantics: "none" (0 minutes) means never, not instantly
+# ---------------------------------------------------------------------------
+
+
+class TestResetIfNeeded:
+    """Validate reset_if_needed duration semantics."""
+
+    def test_zero_duration_never_auto_resets(self):
+        """The "none" option (0 minutes) must mean never, not instantly."""
+        manager, _, _ = _make_manager(reset_duration={"minutes": 0})
+        manager.manual_control["cover.south"] = True
+        manager.manual_control_time["cover.south"] = dt.datetime.now(
+            UTC
+        ) - dt.timedelta(days=1)
+
+        _run(manager.reset_if_needed())
+
+        assert manager.manual_control["cover.south"] is True
+
+    def test_elapsed_duration_resets(self):
+        """An elapsed nonzero duration must reset manual control."""
+        manager, _, _ = _make_manager(reset_duration={"minutes": 15})
+        manager.manual_control["cover.south"] = True
+        manager.manual_control_time["cover.south"] = dt.datetime.now(
+            UTC
+        ) - dt.timedelta(hours=1)
+
+        _run(manager.reset_if_needed())
+
+        assert manager.manual_control["cover.south"] is False
+
+    def test_unelapsed_duration_keeps_manual(self):
+        """An unelapsed duration must keep manual control latched."""
+        manager, _, _ = _make_manager(reset_duration={"minutes": 15})
+        manager.manual_control["cover.south"] = True
+        manager.manual_control_time["cover.south"] = dt.datetime.now(
+            UTC
+        ) - dt.timedelta(minutes=5)
+
+        _run(manager.reset_if_needed())
+
+        assert manager.manual_control["cover.south"] is True
+
+
+# ---------------------------------------------------------------------------
 # Startup guard: _switches_restored gate
 # ---------------------------------------------------------------------------
 

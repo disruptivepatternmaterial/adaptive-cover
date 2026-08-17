@@ -4,6 +4,17 @@ This repository uses `vX.Y.Z` tags for releases.
 
 ## Preflight
 
+0. Remote sync check (mandatory):
+
+```bash
+git fetch origin
+git status -sb            # must be up to date with origin/main, not diverged
+git ls-remote --tags origin | grep <target-version>   # must be empty
+```
+
+If local and origin have diverged, reconcile first — never tag from a stale
+base (the 2026-07-02 v0.3.8/v0.3.9 collision shipped two parallel fix lines).
+
 1. Confirm clean working tree on target branch.
 2. Ensure these files agree on release version:
    - `custom_components/adaptive_cover/manifest.json`

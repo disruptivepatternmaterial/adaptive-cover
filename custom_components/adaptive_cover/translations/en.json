@@ -1,15 +1,15 @@
 {
   "title": "Adaptive Cover",
   "config": {
+    "error": {
+      "invalid_mode": "Selected blind type is invalid."
+    },
     "step": {
       "user": {
         "data": {
           "name": "Name",
           "blueprint": "Add blueprint to HomeAssistant",
           "mode": "Type of blind"
-        },
-        "errors": {
-          "invalid_mode": "Selected blind type is invalid."
         }
       },
       "automation": {

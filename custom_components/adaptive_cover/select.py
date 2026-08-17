@@ -1,5 +1,7 @@
 """Select platform for Adaptive Cover."""
 
+from __future__ import annotations
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -29,6 +31,31 @@ _OPTION_TO_MINUTES = {
 }
 _MINUTES_TO_OPTION = {v: k for k, v in _OPTION_TO_MINUTES.items()}
 
+# Older builds stored "until sunset" as 9999 minutes.
+_LEGACY_SUNSET_MINUTES = 9999
+
+
+def total_minutes_from_duration(duration: dict | None) -> int | None:
+    """Total minutes represented by a stored duration dict.
+
+    The options flow stores DurationSelector output, which can carry days/
+    hours/minutes/seconds. Reading only the "minutes" key misrepresents
+    hours-based durations (e.g. {"hours": 3, "minutes": 0} is 180 minutes,
+    not 0). Returns None if the dict is unusable.
+    """
+    if not isinstance(duration, dict):
+        return None
+    total = 0
+    for key, factor in (("days", 1440), ("hours", 60), ("minutes", 1)):
+        value = duration.get(key, 0)
+        try:
+            total += int(value) * factor
+        except (TypeError, ValueError):
+            return None
+    if duration.get("minutes") == _LEGACY_SUNSET_MINUTES:
+        return 240
+    return total
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -57,11 +84,13 @@ class AdaptiveCoverOverrideSelect(CoordinatorEntity, SelectEntity):
         duration_dict = config_entry.options.get(
             "manual_override_duration", {"minutes": 15}
         )
-        minutes = duration_dict.get("minutes", 15)
-        # Legacy compatibility: older builds stored "sunset" as 9999 minutes.
-        if minutes == 9999:
-            minutes = 240
-        self._attr_current_option = _MINUTES_TO_OPTION.get(minutes, "60_min")
+        minutes = total_minutes_from_duration(duration_dict)
+        # Durations set via the options-flow DurationSelector (e.g. 3 h,
+        # 12 h) have no matching select option. Show no selection rather
+        # than lying (a 3-hour duration used to display as "none"), and
+        # never rewrite the stored value unless the user actively picks
+        # an option here.
+        self._attr_current_option = _MINUTES_TO_OPTION.get(minutes)
 
     @property
     def device_info(self) -> DeviceInfo:
