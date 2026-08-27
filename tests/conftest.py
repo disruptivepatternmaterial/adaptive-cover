@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import math
 import sys
@@ -9,6 +10,12 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
+
+# Five test modules run coroutines through asyncio.get_event_loop(). Python
+# 3.12 deprecated the implicit main-thread loop and 3.14 removed it, so on a
+# current interpreter those helpers raise "There is no current event loop"
+# before the code under test is ever reached. Install one at collection time.
+asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _mod(name: str, **attrs) -> ModuleType:
