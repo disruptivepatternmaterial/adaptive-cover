@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.13](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.13)
+**Current release:** [v0.3.15](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.15)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -61,6 +61,16 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.15 — HA 2026.8 astral migration, season exclusivity, shared forecast cache
+
+Three production log-noise defects. Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- `get_astral_location` is deprecated (removal in HA Core 2027.7); `SunData` now uses `get_astral_observer`. Solar azimuth and elevation are unchanged to 0.0 degrees; sunrise/sunset now honour the configured elevation, which shifts them by roughly two minutes and makes them agree with Core's own `sun.sun`.
+- `is_summer` and `is_winter` could both be true whenever the current temperature sat between the outdoor summer threshold and `temp_low` on a day forecast to be hot. `is_winter` now yields to `is_summer`, and the coordinator's WARNING (which wrongly blamed `temp_high`/`temp_low`) is a debug trip-wire.
+- `weather.get_forecasts` was called once per config entry for the same weather entity, all in one event-loop tick. The cache is now shared per weather entity with a lock: ten entries go from 960 to 96 calls/day.
+
+Supersedes v0.3.14, which had the same integration fixes but failed CI on a lint rule and did not carry the test or metadata updates.
 
 ### v0.3.13 — Manual override latches on user stop during an adaptive drive
 

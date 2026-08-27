@@ -8,7 +8,9 @@ import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from custom_components.adaptive_cover.const import DOMAIN
 from custom_components.adaptive_cover.coordinator import (
+    _FORECAST_CACHE_KEY,
     AdaptiveCoverManager,
     AdaptiveDataUpdateCoordinator,
     StateChangedData,
@@ -395,22 +397,86 @@ def test_window_latch_listener_replaced_on_reschedule() -> None:
     coordinator.async_refresh.assert_awaited_once()
 
 
-def test_forecast_failure_uses_short_retry_ttl() -> None:
-    """Failures should use the short retry window, not the success cache TTL."""
+def test_unknown_weather_entity_clears_the_forecast_without_calling_out() -> None:
+    """An entity with no state must not leave a stale value behind."""
     coordinator = _coordinator_shell()
     coordinator.hass = SimpleNamespace(
-        states=SimpleNamespace(get=MagicMock(return_value=None))
+        data={},
+        states=SimpleNamespace(get=MagicMock(return_value=None)),
     )
     coordinator.logger = MagicMock()
-    coordinator._FORECAST_CACHE_TTL = dt.timedelta(minutes=15)
-    coordinator._FORECAST_FAILURE_RETRY_TTL = dt.timedelta(seconds=60)
-    coordinator._last_forecast_entity = "weather.home"
-    coordinator._last_forecast_fetch = dt.datetime.now(UTC) - dt.timedelta(minutes=2)
-    coordinator._last_forecast_success = False
     coordinator._max_forecast_temp = 25.0
 
     _run(coordinator._async_update_forecast_max("weather.home"))
 
     coordinator.hass.states.get.assert_called_once_with("weather.home")
     assert coordinator._max_forecast_temp is None
-    assert coordinator._last_forecast_success is False
+
+
+def test_forecast_failure_uses_short_retry_ttl() -> None:
+    """Failures retry after 60 s; successes stay cached for the full 15 minutes.
+
+    The cache lives in hass.data keyed by weather entity, so this drives it
+    through several coordinators sharing one store, which is how it is used.
+    """
+    shared: dict = {}
+    calls: list[str] = []
+
+    def _entry(fail: bool) -> AdaptiveDataUpdateCoordinator:
+        coordinator = _coordinator_shell()
+
+        async def _async_call(_domain, _service, data, target=None, **_kwargs):
+            calls.append(data["type"])
+            if fail:
+                raise RuntimeError("weather integration unavailable")
+            return {
+                target["entity_id"]: {
+                    "forecast": [
+                        {"datetime": "2026-08-27T00:00:00", "temperature": 21.0}
+                    ]
+                }
+            }
+
+        coordinator.hass = SimpleNamespace(
+            data=shared,
+            services=SimpleNamespace(async_call=_async_call),
+            states=SimpleNamespace(
+                get=MagicMock(return_value=SimpleNamespace(state="sunny"))
+            ),
+        )
+        coordinator.logger = MagicMock()
+        coordinator._max_forecast_temp = None
+        return coordinator
+
+    # A total failure tries daily, falls back to twice_daily, and caches nothing.
+    failing = _entry(fail=True)
+    _run(failing._async_update_forecast_max("weather.home"))
+    assert calls == ["daily", "twice_daily"]
+    assert failing._max_forecast_temp is None
+
+    cache = shared[DOMAIN][_FORECAST_CACHE_KEY]["weather.home"]
+    assert cache.success is False
+
+    # Inside the 60 s failure window, no new attempt is made.
+    cache.fetched_at = dt.datetime.now(UTC) - dt.timedelta(seconds=30)
+    calls.clear()
+    _run(_entry(fail=True)._async_update_forecast_max("weather.home"))
+    assert calls == []
+
+    # Past it, the fetch is retried. 60 s is far shorter than the success TTL,
+    # which is the point of having two windows.
+    cache.fetched_at = dt.datetime.now(UTC) - dt.timedelta(seconds=90)
+    calls.clear()
+    recovered = _entry(fail=False)
+    _run(recovered._async_update_forecast_max("weather.home"))
+    assert calls == ["daily"]
+    assert recovered._max_forecast_temp == 21.0
+    assert cache.success is True
+
+    # A five-minute-old success is still served from cache, unlike a failure.
+    cache.fetched_at = dt.datetime.now(UTC) - dt.timedelta(minutes=5)
+    calls.clear()
+    cached = _entry(fail=False)
+    _run(cached._async_update_forecast_max("weather.home"))
+    assert calls == []
+    assert cached._max_forecast_temp == 21.0

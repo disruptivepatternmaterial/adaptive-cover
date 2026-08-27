@@ -1,6 +1,6 @@
 """Fetch sun data."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 from astral import sun as astral_sun
@@ -17,7 +17,7 @@ def _utc(value):
     class sidestepped that by converting to UTC first; without reproducing it
     here, solar elevation drifts by up to 0.39 degrees.
     """
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 class SunData:

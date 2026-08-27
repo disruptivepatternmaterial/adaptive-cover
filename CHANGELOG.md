@@ -8,6 +8,81 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.15] — 2026-08-27
+
+### Fixed
+
+- **`get_astral_location` deprecation warning on every recalculation.** HA deprecated
+  `homeassistant.helpers.sun.get_astral_location` (removal in HA Core 2027.7) and points
+  callers at `get_astral_observer`. On a ten-entry install this was the single largest
+  source of log warnings, and because the warning names this repo's issue tracker it read
+  as a fork bug. `SunData` now holds an astral `Observer`.
+
+  The `Observer` carries `hass.config.elevation`, so the separate per-call elevation
+  argument is gone. Two details mattered:
+
+  - `astral.sun.zenith_and_azimuth()` takes the Julian day from the datetime's own date
+    but the time of day from its UTC hour, so a Pacific evening timestamp pairs today's
+    date with tomorrow's hour. astral's `Location` class hid this by converting to UTC
+    internally. `sun.py` now converts explicitly; without it solar elevation drifts by up
+    to 0.39 degrees. Verified bit-identical (0.0 delta across 289 five-minute samples).
+  - `Location.sunset`/`sunrise` defaulted `observer_elevation` to 0 even though the
+    azimuth/elevation calls passed the configured elevation. Sunrise and sunset now
+    honour it, which also makes them agree with Core's own `sun.sun` entity. At
+    48.78N / 137 m that is sunset +139 s and sunrise -140 s.
+
+  `calculation.py` reached through `SunData.location` directly rather than using the
+  properties, so it now goes through new `solar_azimuth_for()` / `solar_elevation_for()`
+  helpers that accept a caller-supplied `DatetimeIndex`.
+
+- **`is_summer` and `is_winter` could both be true.** The coordinator reported this at
+  WARNING level as a `temp_high`/`temp_low` misconfiguration. It was not: `is_summer` is
+  driven by `predictive_heat`, a statement about later today, while `is_winter` is a
+  statement about right now. Any current temperature between `temp_summer_outside` and
+  `temp_low` therefore satisfies both on a day forecast to be hot. On a ten-entry
+  production install the overlap band was 65-66 F for eight entries and 65-68 F for two,
+  and outside temperature sat inside it for 2.1 and 4.9 hours per day respectively across
+  eleven days. `is_winter` now yields to `is_summer`, because rejecting heat is the point
+  of the predictive check, and the message becomes a debug-level trip-wire on the
+  invariant rather than a warning that sent users after the wrong setting.
+
+- **`weather.get_forecasts` called once per config entry for the same weather entity.**
+  Each coordinator kept a private 15-minute cache, but entries generally all name the same
+  weather entity and every coordinator refreshed in the same event-loop tick. Recorder on
+  the reporting install showed roughly 920-950 calls/day against one weather entity in
+  same-second bursts of up to ten. The cache moves to `hass.data` keyed by entity id with
+  an `asyncio.Lock` so simultaneous refreshes coalesce: 960/day to 96/day at ten entries,
+  with no change to the TTL, the daily/twice_daily fallback, or the fail-to-`None`
+  behaviour.
+
+- **Blocking file write inside the event loop.** A block of leftover debugging opened a
+  hardcoded absolute path on every `is_sunny()` evaluation, tripping HA's
+  blocking-call detector. Removed. The `is_sunny` overcast refinement it was instrumenting
+  (high cloud percentage only forces overcast when the weather condition is itself
+  overcast-like) had only ever been applied in place on a live install and is committed
+  here.
+
+### Added
+
+- `tests/test_sun_observer.py` — pins the `get_astral_observer` migration, including the
+  UTC-conversion trap that silently shifts solar elevation.
+- `tests/test_season_exclusivity.py` — asserts `is_summer` and `is_winter` are mutually
+  exclusive across the temperature/forecast domain, and that genuine cold and genuine heat
+  still select winter and summer.
+- `tests/test_forecast_cache_sharing.py` — asserts ten coordinators sharing one weather
+  entity produce exactly one service call, that the cache is served on repeat, and that a
+  fetch happens again once the TTL expires.
+
+### Notes
+
+- Supersedes v0.3.14, which carried the same three integration fixes but failed CI on
+  ruff `UP017` and did not include the test-stub, version, or changelog updates. Use
+  v0.3.15.
+- `astral` is now declared in `manifest.json` requirements, matching upstream, because
+  `sun.py` imports it directly rather than via `homeassistant.helpers.sun`.
+
+---
+
 ## [0.3.13] — 2026-08-12
 
 ### Fixed

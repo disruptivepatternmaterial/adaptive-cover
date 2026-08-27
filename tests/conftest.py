@@ -222,20 +222,21 @@ class _Generic:
         return cls
 
 
-class _Location:
-    """Small stand-in for astral location."""
+class _Observer:
+    """Duck-typed astral Observer, used only when astral is not installed."""
 
-    def solar_azimuth(self, *_args, **_kwargs):
-        return 180.0
+    latitude = 52.0
+    longitude = 5.0
+    elevation = 0.0
 
-    def solar_elevation(self, *_args, **_kwargs):
-        return 45.0
 
-    def sunset(self, *_args, **_kwargs):
-        return dt.datetime.now(UTC)
-
-    def sunrise(self, *_args, **_kwargs):
-        return dt.datetime.now(UTC)
+def _astral_observer(_hass=None):
+    """Return a real astral Observer when available, else the stub."""
+    try:
+        from astral import Observer
+    except ImportError:
+        return _Observer()
+    return Observer(52.0, 5.0, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +300,7 @@ _mod(
     SelectSelectorConfig=_SelectorConfig,
 )
 helpers_module.selector = sys.modules["homeassistant.helpers.selector"]
-_mod("homeassistant.helpers.sun", get_astral_location=lambda hass: (_Location(), 0))
+_mod("homeassistant.helpers.sun", get_astral_observer=_astral_observer)
 _mod(
     "homeassistant.helpers.entity",
     DeviceInfo=dict,
