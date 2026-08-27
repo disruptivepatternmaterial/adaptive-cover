@@ -1,10 +1,23 @@
 """Fetch sun data."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
+from astral import sun as astral_sun
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.sun import get_astral_location
+from homeassistant.helpers.sun import get_astral_observer
+
+
+def _utc(value):
+    """Convert an aware datetime to UTC before handing it to astral.
+
+    astral.sun.zenith_and_azimuth() takes the Julian day from the datetime's
+    own date but the time of day from its UTC hour, so a Pacific evening
+    timestamp gets today's date paired with tomorrow's hour. astral's Location
+    class sidestepped that by converting to UTC first; without reproducing it
+    here, solar elevation drifts by up to 0.39 degrees.
+    """
+    return value.astimezone(timezone.utc)
 
 
 class SunData:
@@ -12,9 +25,12 @@ class SunData:
 
     def __init__(self, timezone, hass: HomeAssistant) -> None:  # noqa: D107
         self.hass = hass
-        location, elevation = get_astral_location(self.hass)
-        self.location = location  # astral.location.Location
-        self.elevation = elevation
+        # An Observer already carries hass.config.elevation, so elevation is
+        # no longer a separate per-call argument. Unlike the old
+        # Location.sunset/sunrise calls, which silently used elevation 0,
+        # sunrise/sunset now honour the configured elevation and therefore
+        # agree with Core's own sun.sun entity.
+        self.observer = get_astral_observer(hass)
         self.timezone = timezone
 
     @property
@@ -31,20 +47,28 @@ class SunData:
     @property
     def solar_azimuth(self) -> list:
         """Create list with solar azimuth data per 5 minutes."""
-        return [self.location.solar_azimuth(t, self.elevation) for t in self.times]
+        return self.solar_azimuth_for(self.times)
+
+    def solar_azimuth_for(self, times) -> list:
+        """Solar azimuth for a caller-supplied DatetimeIndex."""
+        return [astral_sun.azimuth(self.observer, _utc(t)) for t in times]
 
     @property
     def solar_elevation(self) -> list:
         """Create list with solar elevation data per 5 minutes."""
-        return [self.location.solar_elevation(t, self.elevation) for t in self.times]
+        return self.solar_elevation_for(self.times)
+
+    def solar_elevation_for(self, times) -> list:
+        """Solar elevation for a caller-supplied DatetimeIndex."""
+        return [astral_sun.elevation(self.observer, _utc(t)) for t in times]
 
     def sunset(self) -> datetime:
         """Fetch sunset time."""
-        return self.location.sunset(date.today(), local=False)
+        return astral_sun.sunset(self.observer, date.today())
 
     def sunrise(self) -> datetime:
         """Fetch sunrise time."""
-        return self.location.sunrise(date.today(), local=False)
+        return astral_sun.sunrise(self.observer, date.today())
 
     # def df_today(self)-> pd.DataFrame:
     #     """Create dataframe with azimuth and elevation data"""

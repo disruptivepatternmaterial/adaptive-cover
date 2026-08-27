@@ -59,8 +59,8 @@ class AdaptiveGeneralCover(ABC):
         times = self.sun_data.times
         df_today = pd.DataFrame(
             {
-                "azimuth": [self.sun_data.location.solar_azimuth(t, self.sun_data.elevation) for t in times],
-                "elevation": [self.sun_data.location.solar_elevation(t, self.sun_data.elevation) for t in times],
+                "azimuth": self.sun_data.solar_azimuth_for(times),
+                "elevation": self.sun_data.solar_elevation_for(times),
             }
         )
         solpos = df_today.set_index(times)
@@ -321,11 +321,29 @@ class ClimateCoverData:
 
     @property
     def is_winter(self) -> bool:
-        """Check if temperature is below threshold."""
+        """Check if temperature is below threshold, and summer does not apply.
+
+        `is_summer` may be driven by `predictive_heat`, which is a statement
+        about later today rather than about now. Comparing that against
+        `is_winter`, which is a statement about now, is not mutually
+        exclusive: a cool morning on a day forecast to be hot satisfies both
+        at once whenever the current temperature sits between
+        `temp_summer_outside` and `temp_low`. Heat rejection wins in that
+        band, because that is the whole point of the predictive check.
+        """
         if self.temp_low is not None and self.get_current_temperature is not None:
             is_it = self.get_current_temperature < self.temp_low
         else:
             is_it = False
+
+        if is_it and self.is_summer:
+            self.logger.debug(
+                "is_winter(): below temp_low but summer applies "
+                "(current=%s, temp_low=%s) -> not winter",
+                self.get_current_temperature,
+                self.temp_low,
+            )
+            return False
 
         self.logger.debug(
             "is_winter(): current_temperature < temp_low: %s < %s = %s",
@@ -394,7 +412,26 @@ class ClimateCoverData:
           2. `weather_entity`'s `cloud_coverage` state attribute
              (works on OpenWeatherMap, Met.no, etc).
           3. Fall back to the legacy weather-state-string match.
+
+        High cloud % (>65) only forces overcast when the weather condition
+        itself is overcast-like (cloudy/rain/fog/…). Satellite/OWM sensors
+        often report 90–100% during broken decks that HA still reports as
+        `sunny` / `partlycloudy`; trusting cloud % alone kept shades fully
+        open on those days.
         """
+        # Hard overcast weather conditions — high cloud % is trusted here.
+        overcast_weather = {
+            "cloudy",
+            "fog",
+            "rainy",
+            "pouring",
+            "hail",
+            "snowy",
+            "snowy-rainy",
+            "lightning",
+            "lightning-rainy",
+        }
+
         if self.weather_entity is None and not self.cloud_coverage_entity:
             self.logger.debug("is_sunny(): no weather/cloud source defined")
             return True
@@ -421,13 +458,24 @@ class ClimateCoverData:
             try:
                 clouds = float(cloud_coverage)
                 if clouds > 65:
+                    if weather_state in overcast_weather or weather_state is None:
+                        self.logger.debug(
+                            "is_sunny(): cloud=%s%% from %s > 65 with overcast "
+                            "weather=%s -> not sunny",
+                            clouds,
+                            cloud_source,
+                            weather_state,
+                        )
+                        return False
                     self.logger.debug(
-                        "is_sunny(): cloud=%s%% from %s > 65 -> not sunny",
+                        "is_sunny(): cloud=%s%% from %s > 65 but weather=%s "
+                        "is not overcast -> defer to weather allow-list",
                         clouds,
                         cloud_source,
+                        weather_state,
                     )
-                    return False
-                if clouds < 35:
+                    # Fall through to weather-state match (sunny/partlycloudy/…).
+                elif clouds < 35:
                     self.logger.debug(
                         "is_sunny(): cloud=%s%% from %s < 35 -> sunny",
                         clouds,

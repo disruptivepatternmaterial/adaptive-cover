@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import suppress
 import datetime as dt
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pytz
@@ -161,6 +162,19 @@ class AdaptiveCoverData:
     attributes: dict
 
 
+_FORECAST_CACHE_KEY = "forecast_max_cache"
+
+
+@dataclass
+class _ForecastCache:
+    """Per-weather-entity forecast high, shared across all config entries."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    fetched_at: dt.datetime | None = None
+    value: float | None = None
+    success: bool = False
+
+
 class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     """Adaptive cover data update coordinator."""
 
@@ -225,9 +239,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._cached_options = None
 
         self._max_forecast_temp: float | None = None
-        self._last_forecast_fetch: dt.datetime | None = None
-        self._last_forecast_entity: str | None = None
-        self._last_forecast_success: bool = False
 
         # Window-open latch: monotonic timestamp of the most recent moment any
         # configured window/door binary_sensor reported "on". Used by
@@ -248,33 +259,45 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         Tries daily first, falls back to twice_daily (selecting today's
         daytime entry). On any failure or absence the cached value is
         cleared to None so predictive_heat does not silently use stale data.
-        """
-        now_utc = dt.datetime.now(UTC)
-        if (
-            weather_entity == self._last_forecast_entity
-            and self._last_forecast_fetch is not None
-            and (
-                now_utc - self._last_forecast_fetch
-            )
-            < (
-                self._FORECAST_CACHE_TTL
-                if self._last_forecast_success
-                else self._FORECAST_FAILURE_RETRY_TTL
-            )
-        ):
-            return
 
+        The cache lives in `hass.data`, not on the coordinator. Every config
+        entry usually points at the same weather entity, so a per-coordinator
+        cache multiplied the service call rate by the number of entries and
+        all of them fired in the same event-loop tick. The lock makes those
+        simultaneous refreshes coalesce into one call.
+        """
         self._max_forecast_temp = None
         if not weather_entity:
-            self._last_forecast_entity = None
-            self._last_forecast_fetch = now_utc
-            self._last_forecast_success = False
             return
         if self.hass.states.get(weather_entity) is None:
-            self._last_forecast_entity = weather_entity
-            self._last_forecast_fetch = now_utc
-            self._last_forecast_success = False
             return
+
+        cache = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+            _FORECAST_CACHE_KEY, {}
+        )
+        entry = cache.get(weather_entity)
+        if entry is None:
+            entry = cache[weather_entity] = _ForecastCache()
+
+        async with entry.lock:
+            now_utc = dt.datetime.now(UTC)
+            if entry.fetched_at is not None and (now_utc - entry.fetched_at) < (
+                self._FORECAST_CACHE_TTL
+                if entry.success
+                else self._FORECAST_FAILURE_RETRY_TTL
+            ):
+                self._max_forecast_temp = entry.value
+                return
+            entry.value = None
+            entry.success = False
+            entry.fetched_at = now_utc
+            await self._async_fetch_forecast_max(weather_entity, entry)
+        self._max_forecast_temp = entry.value
+
+    async def _async_fetch_forecast_max(
+        self, weather_entity: str, entry: _ForecastCache
+    ) -> None:
+        """Call weather.get_forecasts and store today's high on `entry`."""
 
         for forecast_type in ("daily", "twice_daily"):
             try:
@@ -315,24 +338,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             temp_high = today_entry.get("temperature")
             if temp_high is not None:
                 try:
-                    self._max_forecast_temp = float(temp_high)
+                    entry.value = float(temp_high)
                 except (TypeError, ValueError):
-                    self._max_forecast_temp = None
+                    entry.value = None
                     continue
                 self.logger.debug(
                     "Forecast high from %s (%s): %s",
                     weather_entity,
                     forecast_type,
-                    self._max_forecast_temp,
+                    entry.value,
                 )
-                self._last_forecast_entity = weather_entity
-                self._last_forecast_fetch = now_utc
-                self._last_forecast_success = True
+                entry.success = True
                 return
-
-        self._last_forecast_entity = weather_entity
-        self._last_forecast_fetch = now_utc
-        self._last_forecast_success = False
 
     async def async_config_entry_first_refresh(self) -> None:
         """Config entry first refresh."""
@@ -1179,15 +1196,23 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # Reset to the default before applying season-specific overrides so
         # that transitions (e.g. summer → neither) don't leave a stale value.
         self.control_method = "intermediate"
-        if climate_data.is_summer and climate_data.is_winter and self.switch_mode:
-            # Misconfigured thresholds (temp_high < temp_low) — log and default.
-            self.logger.warning(
-                "Both is_summer and is_winter are True — check temp_high/temp_low config; defaulting to intermediate"
-            )
-        elif climate_data.is_summer and self.switch_mode:
-            self.control_method = "summer"
-        elif climate_data.is_winter and self.switch_mode:
-            self.control_method = "winter"
+        if self.switch_mode:
+            # ClimateCoverData.is_winter already yields to is_summer, so the
+            # two are mutually exclusive here. Keep a debug-level trip-wire
+            # rather than the old WARNING: the overlap was never a
+            # temp_high/temp_low misconfiguration, so telling the user to
+            # check those thresholds sent them after the wrong thing.
+            is_summer = climate_data.is_summer
+            is_winter = climate_data.is_winter
+            if is_summer and is_winter:
+                self.logger.debug(
+                    "is_summer and is_winter both True; season exclusivity "
+                    "invariant broken, preferring summer"
+                )
+            if is_summer:
+                self.control_method = "summer"
+            elif is_winter:
+                self.control_method = "winter"
         self.logger.debug(
             "Climate mode control method was set to %s", self.control_method
         )
