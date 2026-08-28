@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.15](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.15)
+**Current release:** [v0.3.16](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.16)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 

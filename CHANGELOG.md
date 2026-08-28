@@ -4,7 +4,7 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
-## [Unreleased]
+## [0.3.16] — 2026-08-28
 
 ### Fixed
 
