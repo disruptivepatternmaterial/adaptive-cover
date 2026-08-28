@@ -8,6 +8,6 @@
   "documentation": "https://github.com/disruptivepatternmaterial/adaptive-cover",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/disruptivepatternmaterial/adaptive-cover/issues",
-  "requirements": ["astral", "pandas"],
+  "requirements": ["astral==2.2", "numpy", "pandas", "python-dateutil"],
   "version": "0.3.15"
 }

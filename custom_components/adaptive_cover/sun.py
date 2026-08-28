@@ -3,9 +3,21 @@
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
-from astral import sun as astral_sun
+from astral import Observer, sun as astral_sun
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.sun import get_astral_observer
+
+try:
+    from homeassistant.helpers.sun import get_astral_observer
+except ImportError:
+    # get_astral_observer landed in HA 2026.7. Older cores back to the
+    # declared 2024.5 floor have no such helper, and an unguarded import
+    # fails setup outright, so rebuild it from the same three config values
+    # Core itself uses.
+    def get_astral_observer(hass: HomeAssistant) -> Observer:
+        """Return an astral Observer for hass's configured location."""
+        return Observer(
+            hass.config.latitude, hass.config.longitude, hass.config.elevation
+        )
 
 
 def _utc(value):

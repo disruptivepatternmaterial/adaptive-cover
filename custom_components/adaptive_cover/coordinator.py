@@ -9,7 +9,6 @@ import time
 from dataclasses import dataclass, field
 
 import numpy as np
-import pytz
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -668,7 +667,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if (
             self.first_refresh
             or self._sun_start_time is None
-            or dt.datetime.now(pytz.UTC).date() != self._sun_start_time.date()
+            or dt.datetime.now(dt.UTC).date() != self._sun_start_time.date()
         ):
             self.logger.debug("Calculating solar times")
             start, end = await self.hass.async_add_executor_job(normal_cover.solar_times)
