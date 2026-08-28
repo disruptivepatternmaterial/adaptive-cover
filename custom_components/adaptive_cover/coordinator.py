@@ -291,8 +291,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 return
             entry.value = None
             entry.success = False
-            entry.fetched_at = now_utc
-            await self._async_fetch_forecast_max(weather_entity, entry)
+            try:
+                await self._async_fetch_forecast_max(weather_entity, entry)
+            except asyncio.CancelledError:
+                # A reload or shutdown cancels us mid-fetch. Leaving fetched_at
+                # unset matters: stamped, this half-finished entry would be
+                # served as an authoritative "no forecast" to every config
+                # entry sharing the weather entity until the retry TTL expired.
+                entry.fetched_at = None
+                raise
+            # Stamped after the call returns, so the TTL measures from when the
+            # answer was known rather than from when we started asking.
+            entry.fetched_at = dt.datetime.now(UTC)
         self._max_forecast_temp = entry.value
 
     async def _async_fetch_forecast_max(
@@ -326,7 +336,10 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
             today_entry = forecasts[0]
             if forecast_type == "twice_daily":
-                today_iso = dt.datetime.now().date().isoformat()
+                # Home Assistant's date, not the OS process's: the forecast
+                # datetimes are local wall-clock, so a UTC container would
+                # match tomorrow's daytime entry all evening.
+                today_iso = dt_util.now().date().isoformat()
                 day_entries = [
                     f
                     for f in forecasts
