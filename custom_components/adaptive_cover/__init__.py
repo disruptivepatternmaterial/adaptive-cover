@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -19,9 +21,10 @@ from .const import (
     CONF_WEATHER_ENTITY,
     CONF_WINDOW_ENTITY,
     DOMAIN,
-    _LOGGER,
 )
 from .coordinator import AdaptiveDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [
     Platform.SENSOR,

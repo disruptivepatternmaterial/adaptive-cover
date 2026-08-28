@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 import datetime as dt
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -39,7 +40,6 @@ from .calculation import (
     NormalCoverState,
 )
 from .const import (
-    _LOGGER,
     ATTR_POSITION,
     ATTR_TILT_POSITION,
     CONF_AWNING_ANGLE,
@@ -107,6 +107,8 @@ from .const import (
     MIN_SETTLE_TOLERANCE,
 )
 from .helpers import get_datetime_from_str, get_last_updated, get_safe_state
+
+_LOGGER = logging.getLogger(__name__)
 
 # Python 3.9 compatibility: datetime.UTC exists in 3.11+ only.
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017

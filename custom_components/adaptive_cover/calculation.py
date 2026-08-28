@@ -333,7 +333,19 @@ class ClimateCoverData:
             if domain == "device_tracker":
                 return presence == "home"
             if domain == "zone":
-                return int(presence) > 0
+                try:
+                    return int(presence) > 0
+                except (TypeError, ValueError):
+                    # A zone state is normally an occupant count, but nothing
+                    # guarantees it. Assume presence, matching the default for
+                    # no sensor at all, rather than failing the whole update.
+                    self.logger.debug(
+                        "is_presence(): zone %s reported %r, not a count; "
+                        "assuming presence",
+                        self.presence_entity,
+                        presence,
+                    )
+                    return True
             if domain in ["binary_sensor", "input_boolean"]:
                 return presence == "on"
         return True

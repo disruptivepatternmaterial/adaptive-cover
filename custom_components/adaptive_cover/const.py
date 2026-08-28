@@ -3,8 +3,10 @@
 import logging
 
 DOMAIN = "adaptive_cover"
+# The package logger, passed to DataUpdateCoordinator. Modules that log on
+# their own account define a module-level logger instead, so records carry the
+# module that emitted them and `logger:` filters on it work.
 LOGGER = logging.getLogger(__package__)
-_LOGGER = logging.getLogger(__name__)
 
 ATTR_POSITION = "position"
 ATTR_TILT_POSITION = "tilt_position"

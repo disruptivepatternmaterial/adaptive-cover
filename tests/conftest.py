@@ -341,7 +341,12 @@ class _SelectEntity:
     """Minimal SelectEntity stand-in (distinct class to keep MRO valid)."""
 
 
+class _ButtonEntity:
+    """Minimal ButtonEntity stand-in (distinct class to keep MRO valid)."""
+
+
 _mod("homeassistant.components")
+_mod("homeassistant.components.button", ButtonEntity=_ButtonEntity)
 _mod("homeassistant.components.cover", DOMAIN="cover")
 _mod("homeassistant.components.select", SelectEntity=_SelectEntity)
 _mod(
