@@ -110,8 +110,7 @@ from .helpers import get_datetime_from_str, get_last_updated, get_safe_state
 
 _LOGGER = logging.getLogger(__name__)
 
-# Python 3.9 compatibility: datetime.UTC exists in 3.11+ only.
-UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
+UTC = dt.UTC
 
 
 def settle_tolerance(manual_threshold: int | None) -> int:
@@ -206,7 +205,6 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._sun_end_time = None
         self._sun_start_time = None
         self._sun_times_date = None
-        # self._end_time = None
         self.manual_reset = config_entry.options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = _normalize_manual_duration(
             config_entry.options.get(

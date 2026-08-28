@@ -81,7 +81,6 @@ from .const import (
     CONF_ENABLE_MIN_POSITION,
 )
 
-# DEFAULT_NAME = "Adaptive Cover"
 
 SENSOR_TYPE_MENU = [SensorType.BLIND, SensorType.AWNING, SensorType.TILT]
 
@@ -409,7 +408,6 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
-        # errors = {}
         if user_input:
             self.config = dict(user_input)
             mode = self.config.get(CONF_MODE)

@@ -38,45 +38,6 @@ Changelog = "https://github.com/disruptivepatternmaterial/adaptive-cover/release
 build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
-[tool.ruff]
-ignore = [
-  "ANN101", # Self... explanatory
-  "ANN401", # Opiniated warning on disallowing dynamically typed expressions
-  "D203", # Conflicts with other rules
-  "D213", # Conflicts with other rules
-  "TID252", # Relative imports
-  "RUF012", # Just broken
-
-  # Formatter conflicts
-  "COM812",
-  "COM819",
-  "D206",
-  "E501",
-  "ISC001",
-  "Q000",
-  "Q001",
-  "Q002",
-  "Q003",
-  "W191",
-]
-select = ["ALL"]
-src = ["custom_components/adaptive_cover"]
-
-[tool.ruff.flake8-import-conventions.extend-aliases]
-"homeassistant.helpers.area_registry" = "ar"
-"homeassistant.helpers.config_validation" = "cv"
-"homeassistant.helpers.device_registry" = "dr"
-"homeassistant.helpers.entity_registry" = "er"
-"homeassistant.helpers.issue_registry" = "ir"
-voluptuous = "vol"
-
-[tool.ruff.isort]
-force-sort-within-sections = true
-known-first-party = [
-    "homeassistant",
-]
-combine-as-imports = true
-
 [tool.pylint."MESSAGES CONTROL"]
 # Reasons disabled:
 # format - handled by ruff

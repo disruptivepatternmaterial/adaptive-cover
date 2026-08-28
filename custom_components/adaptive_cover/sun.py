@@ -111,8 +111,3 @@ class SunData:
         """Solar elevation right now, in degrees above the horizon."""
         return astral_sun.elevation(self.observer, datetime.now(UTC))
 
-    # def df_today(self)-> pd.DataFrame:
-    #     """Create dataframe with azimuth and elevation data"""
-    #     df_today = pd.DataFrame({"azimuth":self.solar_azimuth, "elevation":self.solar_elevation})
-    #     df_today = df_today.set_index(self.times)
-    #     return df_today
