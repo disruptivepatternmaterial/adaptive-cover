@@ -2,7 +2,8 @@
   "title": "Adaptive Cover",
   "config": {
     "error": {
-      "invalid_mode": "Selected blind type is invalid."
+      "invalid_mode": "Selected blind type is invalid.",
+      "temp_high_not_above_low": "Maximum comfortable temperature must be above the minimum, otherwise one season can never apply."
     },
     "step": {
       "user": {
@@ -115,7 +116,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Choose weather conditions that indicate the possibility of direct sunlight."
         },
@@ -240,6 +243,9 @@
     }
   },
   "options": {
+    "error": {
+      "temp_high_not_above_low": "Maximum comfortable temperature must be above the minimum, otherwise one season can never apply."
+    },
     "step": {
       "init": {
         "menu_options": {
@@ -354,7 +360,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Choose weather conditions that indicate the possibility of direct sunlight."
         },

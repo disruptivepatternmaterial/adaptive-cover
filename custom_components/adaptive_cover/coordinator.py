@@ -1220,18 +1220,14 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         # that transitions (e.g. summer → neither) don't leave a stale value.
         self.control_method = "intermediate"
         if self.switch_mode:
-            # ClimateCoverData.is_winter already yields to is_summer, so the
-            # two are mutually exclusive here. Keep a debug-level trip-wire
-            # rather than the old WARNING: the overlap was never a
-            # temp_high/temp_low misconfiguration, so telling the user to
-            # check those thresholds sent them after the wrong thing.
+            # No overlap check. ClimateCoverData.is_winter returns False
+            # whenever is_summer holds, and the two reads below have no await
+            # between them, so `is_summer and is_winter` was unreachable --
+            # a trip-wire that could not trip. The real cause of the overlap
+            # this once tried to report was a stored outside-temperature
+            # threshold of 0; see async_migrate_entry.
             is_summer = climate_data.is_summer
             is_winter = climate_data.is_winter
-            if is_summer and is_winter:
-                self.logger.debug(
-                    "is_summer and is_winter both True; season exclusivity "
-                    "invariant broken, preferring summer"
-                )
             if is_summer:
                 self.control_method = "summer"
             elif is_winter:

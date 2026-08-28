@@ -15,6 +15,7 @@ from .const import (
     CONF_CLOUD_COVERAGE_ENTITY,
     CONF_END_ENTITY,
     CONF_ENTITIES,
+    CONF_OUTSIDE_THRESHOLD,
     CONF_PRESENCE_ENTITY,
     CONF_START_ENTITY,
     CONF_TEMP_ENTITY,
@@ -35,6 +36,38 @@ PLATFORMS = [
 ]
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Drop an outside-temperature threshold that was never chosen by the user.
+
+    CLIMATE_OPTIONS declared `vol.Optional(CONF_OUTSIDE_THRESHOLD, default=0)`.
+    voluptuous materialises a default while validating rather than only
+    offering it in the form, so every entry created under that schema stored a
+    threshold of 0 whether or not the field was touched. Zero is not a usable
+    threshold -- `outside_high` degrades to `outside > 0` and `predictive_heat`
+    to `forecast > 2` -- so summer heat rejection engaged year-round.
+
+    Removing the default fixes new entries only; the stored zero has to go
+    explicitly. Zero was unreachable as a deliberate choice (the field was
+    optional and the slider floor is 0, so leaving it alone produced the same
+    value), and anyone who genuinely wants the lowest possible gate can enter
+    1. Any other stored value is left untouched.
+    """
+    if entry.options.get(CONF_OUTSIDE_THRESHOLD) != 0:
+        return True
+
+    options = dict(entry.options)
+    options.pop(CONF_OUTSIDE_THRESHOLD)
+    _LOGGER.info(
+        "Entry %s: removing outside temperature threshold of 0, which was "
+        "written by a schema default rather than chosen. Summer mode is no "
+        "longer gated on outdoor temperature for this cover; set a threshold "
+        "in the climate options if you want one",
+        entry.title or entry.entry_id,
+    )
+    hass.config_entries.async_update_entry(entry, options=options)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Adaptive Cover from a config entry."""
 
@@ -47,7 +80,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _cloud_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
     # window_entity may be a string (legacy single) or list (multi-select).
     _raw_window = entry.options.get(CONF_WINDOW_ENTITY) or []
-    _window_entities = [_raw_window] if isinstance(_raw_window, str) else list(_raw_window)
+    _window_entities = (
+        [_raw_window] if isinstance(_raw_window, str) else list(_raw_window)
+    )
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
     _start_time_entity = entry.options.get(CONF_START_ENTITY)
     _end_time_entity = entry.options.get(CONF_END_ENTITY)

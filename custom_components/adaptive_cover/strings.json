@@ -1,6 +1,9 @@
 {
   "title": "Adaptive Cover",
   "config": {
+    "error": {
+      "temp_high_not_above_low": "Maximum comfortable temperature must be above the minimum, otherwise one season can never apply."
+    },
     "step": {
       "user": {
         "data": {
@@ -101,7 +104,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Choose the weather conditions that enable automatic window control."
         },
@@ -218,6 +223,9 @@
     }
   },
   "options": {
+    "error": {
+      "temp_high_not_above_low": "Maximum comfortable temperature must be above the minimum, otherwise one season can never apply."
+    },
     "step": {
       "init": {
         "menu_options": {
@@ -321,7 +329,9 @@
         "title": "Climate settings"
       },
       "weather": {
-        "data": { "weather_state": "Weather Conditions" },
+        "data": {
+          "weather_state": "Weather Conditions"
+        },
         "data_description": {
           "weather_state": "Choose the weather conditions that enable automatic window control."
         },
