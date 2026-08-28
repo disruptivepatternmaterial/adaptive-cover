@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from custom_components.adaptive_cover.const import DOMAIN
 from custom_components.adaptive_cover.coordinator import (
     _FORECAST_CACHE_KEY,
+    SHARED_DATA_KEY,
     AdaptiveCoverManager,
     AdaptiveDataUpdateCoordinator,
     StateChangedData,
@@ -454,7 +455,7 @@ def test_forecast_failure_uses_short_retry_ttl() -> None:
     assert calls == ["daily", "twice_daily"]
     assert failing._max_forecast_temp is None
 
-    cache = shared[DOMAIN][_FORECAST_CACHE_KEY]["weather.home"]
+    cache = shared[DOMAIN][SHARED_DATA_KEY][_FORECAST_CACHE_KEY]["weather.home"]
     assert cache.success is False
 
     # Inside the 60 s failure window, no new attempt is made.

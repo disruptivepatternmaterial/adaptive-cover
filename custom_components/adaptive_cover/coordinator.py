@@ -163,7 +163,16 @@ class AdaptiveCoverData:
     attributes: dict
 
 
+# hass.data[DOMAIN] maps entry_id -> coordinator and nothing else. Anything
+# shared between entries goes one level down, under this reserved key, so a
+# future `for coordinator in hass.data[DOMAIN].values()` cannot trip over it.
+SHARED_DATA_KEY = "_shared"
 _FORECAST_CACHE_KEY = "forecast_max_cache"
+
+
+def shared_data(hass: HomeAssistant) -> dict:
+    """Return the per-installation scratch space beside the entry coordinators."""
+    return hass.data.setdefault(DOMAIN, {}).setdefault(SHARED_DATA_KEY, {})
 
 
 @dataclass
@@ -184,6 +193,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     _WAIT_FOR_TARGET_TIMEOUT_S = 90
     _FORECAST_CACHE_TTL = dt.timedelta(minutes=15)
     _FORECAST_FAILURE_RETRY_TTL = dt.timedelta(seconds=60)
+    # A wedged weather integration must not hold the shared lock forever;
+    # every other config entry pointing at the same entity queues behind it.
+    _FORECAST_FETCH_TIMEOUT_S = 30
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:  # noqa: D107
         super().__init__(hass, LOGGER, name=DOMAIN, config_entry=config_entry)
@@ -271,9 +283,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         if self.hass.states.get(weather_entity) is None:
             return
 
-        cache = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-            _FORECAST_CACHE_KEY, {}
-        )
+        cache = shared_data(self.hass).setdefault(_FORECAST_CACHE_KEY, {})
         entry = cache.get(weather_entity)
         if entry is None:
             entry = cache[weather_entity] = _ForecastCache()
@@ -287,10 +297,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             ):
                 self._max_forecast_temp = entry.value
                 return
-            entry.value = None
+            # Do not pre-clear entry.value. _async_fetch_forecast_max only
+            # writes it on success, so blanking it here meant one failed fetch
+            # served None to every config entry sharing this weather entity
+            # for the whole failure TTL, disabling predictive_heat house-wide
+            # over a transient error. Keep the last known good value and let
+            # the TTL decide when it is too old to use.
+            #
+            # success is reset, though: it only selects which TTL applies, and
+            # a stale True would grant a failed attempt the full 15 minutes.
+            # _async_fetch_forecast_max sets it back to True once it has a
+            # value.
             entry.success = False
             try:
-                await self._async_fetch_forecast_max(weather_entity, entry)
+                async with asyncio.timeout(self._FORECAST_FETCH_TIMEOUT_S):
+                    await self._async_fetch_forecast_max(weather_entity, entry)
             except asyncio.CancelledError:
                 # A reload or shutdown cancels us mid-fetch. Leaving fetched_at
                 # unset matters: stamped, this half-finished entry would be
@@ -298,6 +319,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 # entry sharing the weather entity until the retry TTL expired.
                 entry.fetched_at = None
                 raise
+            except TimeoutError:
+                # Caught here on purpose. asyncio.timeout raises TimeoutError,
+                # which subclasses OSError and so Exception, and
+                # _async_update_forecast_max is awaited unguarded inside
+                # _async_refresh_data -- so letting it escape would be turned
+                # into UpdateFailed and take every entity on the entry
+                # unavailable because an *optional* forecast was slow.
+                self.logger.warning(
+                    "Forecast fetch for %s exceeded %s s; keeping the previous "
+                    "value and retrying after %s",
+                    weather_entity,
+                    self._FORECAST_FETCH_TIMEOUT_S,
+                    self._FORECAST_FAILURE_RETRY_TTL,
+                )
             # Stamped after the call returns, so the TTL measures from when the
             # answer was known rather than from when we started asking.
             entry.fetched_at = dt.datetime.now(UTC)

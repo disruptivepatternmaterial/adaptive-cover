@@ -23,7 +23,11 @@ from .const import (
     CONF_WINDOW_ENTITY,
     DOMAIN,
 )
-from .coordinator import AdaptiveDataUpdateCoordinator
+from .coordinator import (
+    SHARED_DATA_KEY,
+    AdaptiveDataUpdateCoordinator,
+    _FORECAST_CACHE_KEY,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,9 +134,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        # Defaulted: a failed setup can leave the entry absent, and an
+        # unguarded pop turns that into a KeyError that masks the real error.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        _release_shared_data(hass, entry)
 
     return unload_ok
+
+
+def _release_shared_data(hass: HomeAssistant, unloading: ConfigEntry) -> None:
+    """Drop shared cache records no remaining entry can use.
+
+    The forecast cache is keyed by weather entity and shared across entries, so
+    it cannot be dropped with the entry that happened to create it. Without
+    this, every _ForecastCache and its asyncio.Lock outlived reloads and
+    accumulated for the lifetime of the process.
+    """
+    domain_data = hass.data.get(DOMAIN)
+    if not domain_data:
+        return
+
+    still_wanted = {
+        other.options.get(CONF_WEATHER_ENTITY)
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != unloading.entry_id
+    }
+    shared = domain_data.get(SHARED_DATA_KEY) or {}
+    cache = shared.get(_FORECAST_CACHE_KEY) or {}
+    for weather_entity in [key for key in cache if key not in still_wanted]:
+        del cache[weather_entity]
+        _LOGGER.debug("Released forecast cache for %s", weather_entity)
+
+    if not cache:
+        shared.pop(_FORECAST_CACHE_KEY, None)
+    if not shared:
+        domain_data.pop(SHARED_DATA_KEY, None)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
