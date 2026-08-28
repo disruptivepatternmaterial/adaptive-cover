@@ -207,9 +207,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._sun_times_date = None
         self.manual_reset = config_entry.options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = _normalize_manual_duration(
-            config_entry.options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15}
-            )
+            config_entry.options.get(CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15})
         )
         self.manual_threshold = None
         self.state_change = False
@@ -377,7 +375,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.expected_restore_ids = ids
         if not ids:
             self._switches_restored = True
-            self.logger.debug("No switches to restore; marking startup gate as restored")
+            self.logger.debug(
+                "No switches to restore; marking startup gate as restored"
+            )
             self.hass.async_create_task(self.async_refresh())
 
     def mark_switch_restored(self, unique_id: str) -> None:
@@ -421,7 +421,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         parsed_time = get_datetime_from_str(time)
         if parsed_time is None:
-            self.logger.debug("Timed refresh: could not parse end time %r, skipping", time)
+            self.logger.debug(
+                "Timed refresh: could not parse end time %r, skipping", time
+            )
             return
         # Apply the same midnight rollover that _end_time uses: a configured
         # time of 00:00 means "end of day" so advance by one day so it isn't
@@ -529,6 +531,22 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             return
         self.cover_state_change = True
+        if not self._switches_restored:
+            # docs/specs/behavioral-contract.md: "Cover events before switch
+            # restore do not consume command-tracking." The drive paths are
+            # gated on _switches_restored (see async_handle_first_refresh and
+            # async_handle_cover_state_change) but this entry point was not, so
+            # a cover reporting in during startup could clear the tracking for
+            # a command the restored switches have not decided about yet.
+            # Still refresh: the position is worth observing, just not
+            # interpreting.
+            self.logger.debug(
+                "Cover event for %s before switch restore; observing position "
+                "without consuming command-tracking",
+                data["entity_id"],
+            )
+            await self.async_refresh()
+            return
         self.process_entity_state_change()
         await self.async_refresh()
 
@@ -555,10 +573,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             tolerance = settle_tolerance(self.manual_threshold)
             if target is None:
                 self._clear_wait_for_target(entity_id, clear_target=True)
-            elif (
-                position is not None
-                and abs(position - target) <= tolerance
-            ):
+            elif position is not None and abs(position - target) <= tolerance:
                 self._clear_wait_for_target(entity_id, clear_target=False)
                 self.logger.debug(
                     "Position %s reached for %s (target %s, tolerance %s)",
@@ -571,7 +586,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 started_at = self._wait_for_target_started_at.get(entity_id)
                 if (
                     started_at is not None
-                    and (time.monotonic() - started_at) > self._WAIT_FOR_TARGET_TIMEOUT_S
+                    and (time.monotonic() - started_at)
+                    > self._WAIT_FOR_TARGET_TIMEOUT_S
                 ):
                     self.logger.warning(
                         "Timed out waiting for %s to reach target %s; clearing wait state",
@@ -597,7 +613,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self._update_listener()
             self._update_listener = None
 
-    def _clear_wait_for_target(self, entity_id: str, *, clear_target: bool = True) -> None:
+    def _clear_wait_for_target(
+        self, entity_id: str, *, clear_target: bool = True
+    ) -> None:
         """Clear command-tracking state for a single cover."""
         self.wait_for_target[entity_id] = False
         if clear_target:
@@ -643,7 +661,9 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         today = dt_util.now().date()
         if self.first_refresh or self._sun_times_date != today:
             self.logger.debug("Calculating solar times")
-            start, end = await self.hass.async_add_executor_job(normal_cover.solar_times)
+            start, end = await self.hass.async_add_executor_job(
+                normal_cover.solar_times
+            )
             self._sun_start_time = start
             self._sun_end_time = end
             self._sun_times_date = today
@@ -769,9 +789,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     async def async_handle_first_refresh(self, state: int, options):
         """Handle first refresh."""
         if not self._switches_restored:
-            self.logger.debug(
-                "First refresh deferred: switches not yet restored"
-            )
+            self.logger.debug("First refresh deferred: switches not yet restored")
             return
         if self.is_window_open:
             await self._async_drive_to_max_open(options)
@@ -924,7 +942,25 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 self.target_call,
             )
             self.logger.debug("Run %s with data %s", service, service_data)
-            await self.hass.services.async_call(COVER_DOMAIN, service, service_data)
+            try:
+                await self.hass.services.async_call(COVER_DOMAIN, service, service_data)
+            except Exception:
+                # Roll back rather than reorder. The tracking has to be in
+                # place before the await, because HA can deliver the resulting
+                # state-change event while we are suspended here. But if the
+                # call raises -- an unavailable cover, a failing cover
+                # integration -- nothing else clears it, and for the next
+                # _WAIT_FOR_TARGET_TIMEOUT_S seconds a genuine manual move is
+                # attributed to us and does not latch manual override.
+                self._clear_wait_for_target(entity, clear_target=True)
+                self.logger.warning(
+                    "Failed to drive %s to %s; cleared command tracking so a "
+                    "manual move is still detected",
+                    entity,
+                    state,
+                    exc_info=True,
+                )
+                raise
 
     def _update_options(self, options):
         """Update options."""
@@ -951,9 +987,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.end_time_entity = options.get(CONF_END_ENTITY)
         self.manual_reset = options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = _normalize_manual_duration(
-            options.get(
-            CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15}
-            )
+            options.get(CONF_MANUAL_OVERRIDE_DURATION, {"minutes": 15})
         )
         self.manager.set_reset_duration(self.manual_duration)
         self.manual_threshold = options.get(CONF_MANUAL_THRESHOLD)
@@ -1371,7 +1405,9 @@ class AdaptiveCoverManager:
 
     STORE_VERSION = 1
 
-    def __init__(self, hass: HomeAssistant, entry_id: str, reset_duration: dict[str, int], logger) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry_id: str, reset_duration: dict[str, int], logger
+    ) -> None:
         """Initialize the AdaptiveCoverManager."""
         self.covers: set[str] = set()
         self.manual_control: dict[str, bool] = {}
@@ -1402,7 +1438,9 @@ class AdaptiveCoverManager:
         data = await self._store.async_load()
         if not data:
             return
-        self.manual_control = {k: bool(v) for k, v in data.get("manual_control", {}).items()}
+        self.manual_control = {
+            k: bool(v) for k, v in data.get("manual_control", {}).items()
+        }
         raw_times = data.get("manual_control_time", {})
         for entity_id, ts in raw_times.items():
             with suppress(ValueError, TypeError):
@@ -1449,9 +1487,7 @@ class AdaptiveCoverManager:
         if new_state is None:
             return
         new_state_name = new_state.state
-        old_state_name = (
-            None if event.old_state is None else event.old_state.state
-        )
+        old_state_name = None if event.old_state is None else event.old_state.state
         waiting = bool(wait_target_call.get(entity_id))
         target = None if target_call is None else target_call.get(entity_id)
         has_commanded_target = target is not None

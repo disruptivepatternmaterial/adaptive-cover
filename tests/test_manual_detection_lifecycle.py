@@ -82,6 +82,11 @@ class TestAvailabilityBlip:
         coordinator = _coordinator_shell()
         coordinator.logger = MagicMock()
         coordinator.async_refresh = AsyncMock()
+        # Steady state, after startup. Cover events arriving before the
+        # switches are restored are deliberately not interpreted, so a shell
+        # left at the __init__ default would exercise the startup path instead
+        # of the movement path these tests are about.
+        coordinator._switches_restored = True
         return coordinator
 
     def test_return_from_unavailable_not_manual(self):
