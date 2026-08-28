@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover import sun as sun_mod
+from tests.harness import requires_real
 
 LAT = 48.7766295
 LON = -122.428824
@@ -31,42 +32,68 @@ def test_sundata_holds_an_observer_not_a_location() -> None:
     assert not hasattr(data, "location")
 
 
-def test_utc_conversion_matches_the_old_location_wrapper() -> None:
-    """astral.Location converted to UTC internally; skipping that drifts.
-
-    astral.sun.zenith_and_azimuth() derives the Julian day from the datetime's
-    own date but the time of day from its UTC hour, so a Pacific evening
-    timestamp gets today's date paired with tomorrow's hour.
-    """
-    pytest.importorskip("pytz")
-    astral = pytest.importorskip("astral")
-    from astral import LocationInfo, sun as astral_sun
-    from astral.location import Location
-
-    observer = astral.Observer(LAT, LON, ELEV)
-    location = Location(LocationInfo("", "", TZ, LAT, LON))
+def test_utc_conversion_preserves_the_instant() -> None:
+    """_utc() must re-express a moment in UTC, not relabel or shift it."""
     zone = dt.timezone(dt.timedelta(hours=-7))
     moment = dt.datetime(2026, 8, 27, 20, 0, tzinfo=zone)
 
     converted = sun_mod._utc(moment)
-    assert converted.utcoffset() == dt.timedelta(0)
 
-    for astral_call, location_call in (
-        (astral_sun.elevation, location.solar_elevation),
-        (astral_sun.azimuth, location.solar_azimuth),
-    ):
-        assert astral_call(observer, converted) == pytest.approx(
-            location_call(moment, ELEV), abs=1e-9
-        )
-        # The trap: the same call without the conversion does not agree.
-        assert astral_call(observer, moment) != pytest.approx(
-            location_call(moment, ELEV), abs=1e-6
-        )
+    assert converted.utcoffset() == dt.timedelta(0)
+    assert converted == moment
+    assert converted.hour == 3 and converted.day == 28
+
+
+def test_solar_position_depends_on_the_instant_not_the_written_offset() -> None:
+    """The same moment in two timezones must give the same sun position.
+
+    This is the defect _utc() exists to prevent. astral 2.2's
+    zenith_and_azimuth() takes the Julian day from the datetime's own date
+    fields but the time of day from its UTC hour, so a Pacific evening
+    timestamp gets today's date paired with tomorrow's hour -- measured at 0.288
+    degrees of elevation error for this moment. astral fixed that after 2.2, so
+    asserting the *presence* of the drift (as this test used to) turns CI red on
+    a dependency upgrade. Asserting that our own code path is instant-based
+    holds on every version, and still fails on the pinned astral 2.2 if the
+    conversion is removed.
+    """
+    requires_real("astral")
+
+    pacific = dt.datetime(
+        2026, 8, 27, 20, 0, tzinfo=dt.timezone(dt.timedelta(hours=-7))
+    )
+    same_moment_utc = pacific.astimezone(dt.UTC)
+    assert pacific.date() != same_moment_utc.date(), "need a day-straddling moment"
+
+    data = sun_mod.SunData(TZ, MagicMock())
+
+    assert data.solar_elevation_for([pacific]) == pytest.approx(
+        data.solar_elevation_for([same_moment_utc]), abs=1e-9
+    )
+    assert data.solar_azimuth_for([pacific]) == pytest.approx(
+        data.solar_azimuth_for([same_moment_utc]), abs=1e-9
+    )
+
+
+def test_solar_position_agrees_with_a_utc_explicit_astral_call() -> None:
+    """Pin the absolute value, so instant-invariance cannot be met by a constant."""
+    requires_real("astral")
+    from astral import Observer, sun as astral_sun
+
+    pacific = dt.datetime(
+        2026, 8, 27, 20, 0, tzinfo=dt.timezone(dt.timedelta(hours=-7))
+    )
+    observer = Observer(LAT, LON, ELEV)
+    data = sun_mod.SunData(TZ, MagicMock())
+    data.observer = observer
+
+    expected = astral_sun.elevation(observer, pacific.astimezone(dt.UTC))
+    assert data.solar_elevation_for([pacific])[0] == pytest.approx(expected, abs=1e-9)
 
 
 def test_solar_helpers_accept_a_caller_supplied_index() -> None:
     """calculation.solar_times() snapshots `times` once and passes it in."""
-    pytest.importorskip("astral")
+    requires_real("astral")
     data = sun_mod.SunData("UTC", MagicMock())
     moments = [dt.datetime(2026, 8, 27, hour, 0, tzinfo=dt.UTC) for hour in (6, 12, 18)]
     azimuths = data.solar_azimuth_for(moments)

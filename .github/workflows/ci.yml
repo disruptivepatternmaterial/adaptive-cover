@@ -37,3 +37,34 @@ jobs:
       - name: "Run repository checks"
         run: |
           scripts/check
+
+  # The pinned lane above always has pytz, because astral 2.2 and pandas 2.x
+  # both require it. That masks two defects: a conftest stub can silently
+  # replace an installed pandas, and a test can assert an astral 2.2 bug that
+  # later versions fixed. pandas 3 demotes pytz to an optional extra, so this
+  # lane is the only configuration in which pytz is genuinely absent.
+  forward-compat:
+    name: "Forward compat (pandas 3, current astral)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871" # v4.2.1
+
+      - name: "Set up Python"
+        uses: "actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d" # v5.1.0
+        with:
+          python-version: "3.12"
+
+      - name: "Install forward-looking dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pytest>=8.0.0,<9.0.0" ruff==0.9.1
+          python -m pip install "pandas>=3" "numpy>=2" "astral>=3" voluptuous python-dateutil
+          python -m pip uninstall --yes pytz || true
+          python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('pytz') is None else 'pytz is still installed; this lane proves nothing')"
+
+      - name: "Run tests"
+        run: |
+          scripts/test

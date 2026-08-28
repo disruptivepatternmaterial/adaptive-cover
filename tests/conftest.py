@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 UTC = getattr(dt, "UTC", dt.timezone.utc)  # noqa: UP017
 
-# Five test modules run coroutines through asyncio.get_event_loop(). Python
+# Eight test modules run coroutines through asyncio.get_event_loop(). Python
 # 3.12 deprecated the implicit main-thread loop and 3.14 removed it, so on a
 # current interpreter those helpers raise "There is no current event loop"
 # before the code under test is ever reached. Install one at collection time.
@@ -19,7 +19,17 @@ asyncio.set_event_loop(asyncio.new_event_loop())
 
 
 def _mod(name: str, **attrs) -> ModuleType:
-    m = sys.modules.get(name) or ModuleType(name)
+    """Register a stand-in module, marking it so tests can tell it is fake.
+
+    The marker goes only on a module object this function creates. Reusing an
+    entry already in ``sys.modules`` is deliberate -- ``dateutil`` below is
+    populated that way -- and branding a genuinely installed package as a stub
+    would make tests/harness.py skip against real code.
+    """
+    existing = sys.modules.get(name)
+    m = existing or ModuleType(name)
+    if existing is None:
+        m.__adaptive_cover_stub__ = True
     for k, v in attrs.items():
         setattr(m, k, v)
     sys.modules[name] = m
@@ -44,10 +54,13 @@ except ImportError:
         interp=lambda x, xp, fp: fp[0] if x <= xp[0] else fp[-1],
     )
 
-try:
-    import pytz  # noqa: F401
-except ImportError:
-    _mod("pytz", UTC=None, timezone=MagicMock())
+# No pytz stub. Nothing under custom_components/ has imported pytz since
+# 758f73a, and stubbing it here poisoned sys.modules for the pandas import
+# below: pandas raised "Can't determine version for pytz", so the except branch
+# swapped in a stub whose date_range returns [] and the solar-grid tests stopped
+# testing anything. pytz is still a transitive runtime dependency of astral 2.2,
+# which is why tests/harness.py asks whether a module is real rather than
+# whether it imports.
 
 try:
     import pandas as pd  # noqa: F401

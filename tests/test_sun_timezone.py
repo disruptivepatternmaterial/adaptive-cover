@@ -18,6 +18,7 @@ import pytest
 
 from custom_components.adaptive_cover import coordinator as coordinator_mod
 from custom_components.adaptive_cover import sun as sun_mod
+from tests.harness import requires_real
 
 Coordinator = coordinator_mod.AdaptiveDataUpdateCoordinator
 
@@ -49,7 +50,7 @@ def test_today_follows_home_assistant_not_the_os(ha_local_evening: None) -> None
 
 def test_solar_grid_starts_on_the_local_date(ha_local_evening: None) -> None:
     """The 5-minute grid must cover the local day, not the UTC one."""
-    pytest.importorskip("pandas")
+    requires_real("pandas")
     data = sun_mod.SunData("America/Los_Angeles", MagicMock())
     times = data.times
     assert times[0].date() == LOCAL_DATE
@@ -61,7 +62,7 @@ def test_sunrise_and_sunset_use_the_local_date(
     ha_local_evening: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Sunrise/sunset comparisons drive the sunset_valid gate; wrong day, wrong gate."""
-    pytest.importorskip("astral")
+    requires_real("astral")
     seen: list[dt.date] = []
 
     def _record(_observer, day):  # noqa: ANN001, ANN202

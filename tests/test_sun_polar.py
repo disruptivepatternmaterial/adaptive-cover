@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.adaptive_cover import sun as sun_mod
+from tests.harness import requires_real
 from custom_components.adaptive_cover.calculation import AdaptiveGeneralCover
 
 # Tromso, Norway: comfortably inside the Arctic Circle.
@@ -33,7 +34,8 @@ ORDINARY_DAY = dt.date(2026, 9, 21)
 @pytest.fixture
 def arctic_sun_data(monkeypatch: pytest.MonkeyPatch):
     """SunData observing Tromso, with the date under the test's control."""
-    astral = pytest.importorskip("astral")
+    requires_real("astral")
+    import astral
 
     def _build(day: dt.date) -> sun_mod.SunData:
         data = sun_mod.SunData("Europe/Oslo", MagicMock())
@@ -54,7 +56,8 @@ def test_astral_still_raises_for_a_polar_day() -> None:
     "expected a number in range from -1 up to 1, got ...", so astral's check
     misses and the raw domain error surfaces instead.
     """
-    astral = pytest.importorskip("astral")
+    requires_real("astral")
+    import astral
     from astral import sun as astral_sun
 
     observer = astral.Observer(TROMSO_LAT, TROMSO_LON, 0)
@@ -88,7 +91,7 @@ def test_solar_elevation_now_distinguishes_the_two_polar_cases(
     arctic_sun_data,
 ) -> None:
     """sunset_valid resolves polar days by elevation, so it must be signed right."""
-    pytest.importorskip("astral")
+    requires_real("astral")
     from astral import sun as astral_sun
 
     data = arctic_sun_data(POLAR_DAY)
