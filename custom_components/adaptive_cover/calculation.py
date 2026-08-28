@@ -654,11 +654,7 @@ class ClimateCoverState(NormalCoverState):
         # dim, irradiance dim, or overcast. Summer previously skipped this
         # gate (`not is_summer and ...`), so high cloud cover still ran
         # anti-glare geometry / transparent-blind full close.
-        if (
-            self.climate_data.lux
-            or self.climate_data.irradiance
-            or not is_sunny
-        ):
+        if self.climate_data.lux or self.climate_data.irradiance or not is_sunny:
             self.cover.logger.debug(
                 "n_w_p(): dim/cloudy -> default (%s) (summer=%s)",
                 self.cover.default,
@@ -839,13 +835,7 @@ class AdaptiveTiltCover(AdaptiveGeneralCover):
         sqrt_term = (tan(beta) ** 2) - (ratio**2) + 1
         sqrt_term = np.maximum(sqrt_term, 0)
 
-        slat = 2 * np.arctan(
-            (
-                tan(beta)
-                + np.sqrt(sqrt_term)
-            )
-            / (1 + ratio)
-        )
+        slat = 2 * np.arctan((tan(beta) + np.sqrt(sqrt_term)) / (1 + ratio))
         result = np.rad2deg(slat)
 
         return result

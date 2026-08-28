@@ -110,4 +110,3 @@ class SunData:
     def solar_elevation_now(self) -> float:
         """Solar elevation right now, in degrees above the horizon."""
         return astral_sun.elevation(self.observer, datetime.now(UTC))
-
