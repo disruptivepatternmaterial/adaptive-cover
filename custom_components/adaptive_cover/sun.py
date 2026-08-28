@@ -86,13 +86,30 @@ class SunData:
         """Solar elevation for a caller-supplied DatetimeIndex."""
         return [astral_sun.elevation(self.observer, _utc(t)) for t in times]
 
-    def sunset(self) -> datetime:
-        """Fetch sunset time."""
-        return astral_sun.sunset(self.observer, self.today())
+    def _horizon_crossing(self, event) -> datetime | None:
+        """Return an astral sunrise/sunset, or None if the sun does not cross.
 
-    def sunrise(self) -> datetime:
-        """Fetch sunrise time."""
-        return astral_sun.sunrise(self.observer, self.today())
+        Inside the polar circles there are days with no horizon crossing at
+        all. astral solves for one through math.acos and lets the resulting
+        domain error surface as a bare ValueError, which would otherwise fail
+        every coordinator update for the weeks that condition lasts.
+        """
+        try:
+            return event(self.observer, self.today())
+        except ValueError:
+            return None
+
+    def sunset(self) -> datetime | None:
+        """Fetch sunset time, or None on a day the sun does not set."""
+        return self._horizon_crossing(astral_sun.sunset)
+
+    def sunrise(self) -> datetime | None:
+        """Fetch sunrise time, or None on a day the sun does not rise."""
+        return self._horizon_crossing(astral_sun.sunrise)
+
+    def solar_elevation_now(self) -> float:
+        """Solar elevation right now, in degrees above the horizon."""
+        return astral_sun.elevation(self.observer, datetime.now(UTC))
 
     # def df_today(self)-> pd.DataFrame:
     #     """Create dataframe with azimuth and elevation data"""

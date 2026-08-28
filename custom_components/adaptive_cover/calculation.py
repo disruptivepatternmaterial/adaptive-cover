@@ -145,8 +145,19 @@ class AdaptiveGeneralCover(ABC):
     @property
     def sunset_valid(self) -> bool:
         """Determine if it is after sunset plus offset."""
-        sunset = self.sun_data.sunset().replace(tzinfo=None)
-        sunrise = self.sun_data.sunrise().replace(tzinfo=None)
+        sunset_utc = self.sun_data.sunset()
+        sunrise_utc = self.sun_data.sunrise()
+        if sunset_utc is None or sunrise_utc is None:
+            # Polar day or polar night: there is no horizon crossing to offset
+            # from, so ask where the sun actually is. Above the horizon it is
+            # not night however late it is; below it, it is night all day.
+            dark = self.sun_data.solar_elevation_now() <= 0
+            self.logger.debug(
+                "No sunrise/sunset at this latitude today; sun below horizon? %s", dark
+            )
+            return dark
+        sunset = sunset_utc.replace(tzinfo=None)
+        sunrise = sunrise_utc.replace(tzinfo=None)
         # Use datetime.now(_dt.UTC) instead of the deprecated datetime.utcnow().
         # Both sunset/sunrise have tzinfo stripped above so we compare naive UTC.
         now_utc = datetime.now(_dt.UTC).replace(tzinfo=None)
