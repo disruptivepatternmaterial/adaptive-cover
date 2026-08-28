@@ -6,6 +6,62 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ## [Unreleased]
 
+### Fixed
+
+- **Integration did not load at all on Home Assistant older than 2026.7.** `sun.py`
+  imported `get_astral_observer` from `homeassistant.helpers.sun` at module scope, but
+  that helper only exists from Core 2026.7, while `hacs.json` declares a `2024.5.0b1`
+  floor. Everyone below 2026.7 got an `ImportError` during setup. The import is now
+  guarded by a fallback that builds the `Observer` from `hass.config` exactly as Core
+  2026.7 does, so both sides of the version boundary behave identically.
+
+  No test could have caught this: `tests/conftest.py` replaces every `homeassistant`
+  module with a stub, so the suite never imports real Core. `tests/test_ha_api_contract.py`
+  now checks, in a subprocess without those stubs, that every unguarded Core import
+  resolves against the installed Home Assistant.
+
+- **Undeclared runtime dependencies.** `numpy` and `dateutil` were imported at runtime
+  but missing from `manifest.json`, arriving only transitively through `pandas`. Core
+  declares neither, so a pandas change could have removed them. Both are now declared,
+  `astral` is pinned to the `2.2` Core itself pins, and the unused `pytz` import is gone
+  in favour of `datetime.UTC`.
+
+- **Solar calculations used the OS timezone instead of the configured one.** `date.today()`
+  reads the OS process timezone, which is routinely UTC in a container while Home
+  Assistant is set to somewhere else. For anyone west of UTC that returned tomorrow's
+  date all evening, so the solar grid was built for the wrong day and the sunset gate
+  compared against another day's sunrise and sunset. Dates now resolve through
+  `homeassistant.util.dt.now()`.
+
+- **The daily solar grid was rebuilt on every update for some windows.** The cache was
+  keyed on its own result, and `solar_times()` returns `(None, None)` for a window the
+  sun never enters — an ordinary north-facing one in winter. All 289 samples were
+  therefore recomputed every cycle instead of once a day. The date half of the same
+  guard compared a UTC date against a local-timezone timestamp, rolling the cache over
+  at the wrong hour outside UTC. Both are fixed by keying on the local date the grid
+  was built for.
+
+- **Polar day and polar night failed every coordinator update.** astral solves for a
+  horizon crossing with `math.acos` and lets the domain error surface as a bare
+  `ValueError` when there is no crossing at all. `sunset_valid` called it unguarded, so
+  above the Arctic Circle every entity on the entry went unavailable for weeks at a
+  time. Sunrise and sunset now return `None` on such a day and the gate falls back to
+  the sun's actual elevation.
+
+### Changed
+
+- **A high cloud reading now overrides the weather condition string.** Above 65% cloud
+  the reading previously only counted when the weather condition was also overcast-like,
+  so anyone whose allow-list contained `partlycloudy` read as sunny under a 100%
+  overcast sky and the shades stayed open. Readings at or above 90% now decide on their
+  own. The 65–90% band still defers to the allow-list, which is the broken-deck case
+  that deference exists for.
+
+- **A cloud reading is no longer discarded when no weather allow-list is configured.**
+  The property returned `True` unconditionally in that case, so a dedicated cloud sensor
+  read as permanently sunny. The reading now decides when it is the only evidence
+  available. A non-numeric reading is logged rather than silently swallowed.
+
 ---
 
 ## [0.3.15] — 2026-08-27
