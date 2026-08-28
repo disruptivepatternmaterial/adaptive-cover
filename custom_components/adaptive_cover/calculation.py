@@ -17,6 +17,14 @@ from .helpers import get_domain, get_safe_state
 from .sun import SunData
 from .config_context_adapter import ConfigContextAdapter
 
+# Cloud-coverage percentages that decide whether direct sun is worth managing.
+# Below SUNNY it is sunny, above VETO it is overcast no matter what the weather
+# entity's condition string claims, and OVERCAST is the point above which an
+# overcast-like condition string is believed.
+CLOUD_SUNNY_COVERAGE = 35
+CLOUD_OVERCAST_COVERAGE = 65
+CLOUD_VETO_COVERAGE = 90
+
 
 @dataclass
 class AdaptiveGeneralCover(ABC):
@@ -424,11 +432,21 @@ class ClimateCoverData:
              (works on OpenWeatherMap, Met.no, etc).
           3. Fall back to the legacy weather-state-string match.
 
-        High cloud % (>65) only forces overcast when the weather condition
-        itself is overcast-like (cloudy/rain/fog/…). Satellite/OWM sensors
-        often report 90–100% during broken decks that HA still reports as
-        `sunny` / `partlycloudy`; trusting cloud % alone kept shades fully
-        open on those days.
+        Cloud % is read against three thresholds:
+
+          * `>= CLOUD_VETO_COVERAGE` (90): overcast, whatever the weather
+            string says. A broken deck can read 90% while HA still reports
+            `partlycloudy`, but at this much cover there is no direct sun to
+            manage, and letting an allow-listed string win here left shades
+            wide open under a solid sky.
+          * `> CLOUD_OVERCAST_COVERAGE` (65): overcast only if the weather
+            condition agrees (cloudy/rain/fog/…), otherwise defer to the
+            weather allow-list. This is the broken-deck case.
+          * `< CLOUD_SUNNY_COVERAGE` (35): sunny.
+
+        Between 35 and 65 the reading is inconclusive and the weather
+        allow-list decides. When no allow-list is configured, a numeric
+        reading still decides rather than being discarded.
         """
         # Hard overcast weather conditions — high cloud % is trusted here.
         overcast_weather = {
@@ -465,37 +483,57 @@ class ClimateCoverData:
             )
             cloud_source = f"{self.weather_entity}.cloud_coverage"
 
+        clouds = None
         if cloud_coverage is not None:
             try:
                 clouds = float(cloud_coverage)
-                if clouds > 65:
-                    if weather_state in overcast_weather or weather_state is None:
-                        self.logger.debug(
-                            "is_sunny(): cloud=%s%% from %s > 65 with overcast "
-                            "weather=%s -> not sunny",
-                            clouds,
-                            cloud_source,
-                            weather_state,
-                        )
-                        return False
+            except (ValueError, TypeError):
+                self.logger.debug(
+                    "is_sunny(): cloud reading %r from %s is not numeric; ignoring it",
+                    cloud_coverage,
+                    cloud_source,
+                )
+
+        if clouds is not None:
+            if clouds >= CLOUD_VETO_COVERAGE:
+                self.logger.debug(
+                    "is_sunny(): cloud=%s%% from %s >= %s -> not sunny, "
+                    "overriding weather=%s",
+                    clouds,
+                    cloud_source,
+                    CLOUD_VETO_COVERAGE,
+                    weather_state,
+                )
+                return False
+            if clouds > CLOUD_OVERCAST_COVERAGE:
+                if weather_state in overcast_weather or weather_state is None:
                     self.logger.debug(
-                        "is_sunny(): cloud=%s%% from %s > 65 but weather=%s "
-                        "is not overcast -> defer to weather allow-list",
+                        "is_sunny(): cloud=%s%% from %s > %s with overcast "
+                        "weather=%s -> not sunny",
                         clouds,
                         cloud_source,
+                        CLOUD_OVERCAST_COVERAGE,
                         weather_state,
                     )
-                    # Fall through to weather-state match (sunny/partlycloudy/…).
-                elif clouds < 35:
-                    self.logger.debug(
-                        "is_sunny(): cloud=%s%% from %s < 35 -> sunny",
-                        clouds,
-                        cloud_source,
-                    )
-                    return True
-                # 35-65 deadband: fall through to legacy weather-state match.
-            except (ValueError, TypeError):
-                pass
+                    return False
+                self.logger.debug(
+                    "is_sunny(): cloud=%s%% from %s > %s but weather=%s "
+                    "is not overcast -> defer to weather allow-list",
+                    clouds,
+                    cloud_source,
+                    CLOUD_OVERCAST_COVERAGE,
+                    weather_state,
+                )
+                # Fall through to weather-state match (sunny/partlycloudy/…).
+            elif clouds < CLOUD_SUNNY_COVERAGE:
+                self.logger.debug(
+                    "is_sunny(): cloud=%s%% from %s < %s -> sunny",
+                    clouds,
+                    cloud_source,
+                    CLOUD_SUNNY_COVERAGE,
+                )
+                return True
+            # 35-65 deadband: fall through to the weather-state match.
 
         if self.weather_condition is not None:
             matches = weather_state in self.weather_condition
@@ -505,6 +543,19 @@ class ClimateCoverData:
                 matches,
             )
             return matches
+
+        if clouds is not None:
+            # No allow-list to defer to, so the cloud reading is the only
+            # evidence there is; discarding it here is what made a configured
+            # cloud sensor read as permanently sunny.
+            sunny = clouds <= CLOUD_OVERCAST_COVERAGE
+            self.logger.debug(
+                "is_sunny(): no weather allow-list; cloud=%s%% from %s -> %s",
+                clouds,
+                cloud_source,
+                sunny,
+            )
+            return sunny
         return True
 
     @property
