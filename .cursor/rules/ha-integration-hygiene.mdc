@@ -16,6 +16,25 @@ alwaysApply: false
 - Any imported third-party package must be declared in `manifest.json` requirements.
 - Avoid adding heavy dependencies without clear runtime value.
 - Keep behavior compatible with declared HA/Python floors in repository metadata.
+- Declare the same HA floor in `hacs.json`, `requirements.txt`, and `pyproject.toml`.
+- No blocking file I/O inside the event loop.
+
+`scripts/validate_runtime_deps.py` enforces all three mechanically. These rules
+were already written down when the missing-`numpy` and HA-2026.8 `ImportError`
+defects shipped, which is the argument for a machine check over a rule.
+
+# Stubs are not evidence
+
+`tests/conftest.py` replaces every `homeassistant.*` module and several
+third-party packages. A stub cannot tell you whether the API you import still
+exists, or whether the package you rely on is installed — a green suite against
+stubs is compatible with an integration that fails at import for every user.
+
+- API existence is proven in `tests/test_ha_api_contract.py`, which runs probes
+  in a subprocess with no conftest.
+- Dependency reality is proven in `tests/test_harness_integrity.py`; guard
+  dependency-specific tests with `tests/harness.py:requires_real`, not
+  `pytest.importorskip`, which a stub satisfies.
 
 # Entity/platform expectations
 

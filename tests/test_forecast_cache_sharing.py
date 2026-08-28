@@ -46,6 +46,7 @@ class _Entry:
 
     _FORECAST_CACHE_TTL = Coordinator._FORECAST_CACHE_TTL
     _FORECAST_FAILURE_RETRY_TTL = Coordinator._FORECAST_FAILURE_RETRY_TTL
+    _FORECAST_FETCH_TIMEOUT_S = Coordinator._FORECAST_FETCH_TIMEOUT_S
     _async_update_forecast_max = Coordinator._async_update_forecast_max
     _async_fetch_forecast_max = Coordinator._async_fetch_forecast_max
 
@@ -79,7 +80,9 @@ def _run(coro):
 
 
 def _cache(hass: _Hass):
-    return hass.data[DOMAIN][coordinator_mod._FORECAST_CACHE_KEY][WEATHER]
+    return hass.data[DOMAIN][coordinator_mod.SHARED_DATA_KEY][
+        coordinator_mod._FORECAST_CACHE_KEY
+    ][WEATHER]
 
 
 def test_simultaneous_refreshes_coalesce_into_one_call() -> None:
@@ -130,7 +133,10 @@ def test_cache_lives_on_hass_not_on_the_coordinator() -> None:
         return hass
 
     hass = _run(scenario())
-    assert coordinator_mod._FORECAST_CACHE_KEY in hass.data[DOMAIN]
+    assert (
+        coordinator_mod._FORECAST_CACHE_KEY
+        in hass.data[DOMAIN][coordinator_mod.SHARED_DATA_KEY]
+    )
     assert _cache(hass).value == 81.0
     assert _cache(hass).success is True
 

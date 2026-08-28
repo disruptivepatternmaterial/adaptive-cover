@@ -2,6 +2,11 @@
 pre-commit==4.0.1
 ruff==0.9.1
 pytest>=8.0.0,<9.0.0
+# Pinned to the version manifest.json declares and every supported HA Core
+# ships, so the suite tests that version rather than whatever the transitive
+# chain happens to resolve. astral 2.2 also requires pytz, which is why the
+# forward-compat CI lane installs astral>=3 instead of dropping pytz here.
+astral==2.2
 colorlog~=6.8
 pvlib~=0.11
 matplotlib~=3.9

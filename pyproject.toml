@@ -17,10 +17,14 @@ name = "adaptive_cover"
 packages = []
 readme = "README.md"
 repository = "https://github.com/disruptivepatternmaterial/adaptive-cover"
-version = "0.3.16"
+version = "0.3.17"
 
 [tool.poetry.dependencies]
-homeassistant = ">=2024.4.0"
+# Must match hacs.json and requirements.txt; scripts/validate_runtime_deps.py
+# enforces it. 2024.5 is the real floor: sun.py falls back to rebuilding an
+# astral Observer for cores older than 2026.7, and nothing below 2024.5 has
+# been tested.
+homeassistant = ">=2024.5.0"
 python = "^3.11"
 
 [tool.poetry.group.dev.dependencies]

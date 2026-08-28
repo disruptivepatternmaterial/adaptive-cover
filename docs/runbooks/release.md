@@ -26,7 +26,14 @@ base (the 2026-07-02 v0.3.8/v0.3.9 collision shipped two parallel fix lines).
 ```bash
 scripts/check
 python3 scripts/validate_release_metadata.py
+python3 scripts/validate_runtime_deps.py
 ```
+
+`scripts/check` runs both validators, so this is belt-and-braces for a release
+cut by hand. `validate_runtime_deps.py` covers three things: every third-party
+import is declared in `manifest.json`, the Home Assistant floor agrees across
+`hacs.json` / `requirements.txt` / `pyproject.toml`, and the integration does no
+blocking file I/O in the event loop.
 
 ## Publish
 

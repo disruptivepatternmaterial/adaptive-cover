@@ -244,7 +244,14 @@ CLIMATE_OPTIONS = vol.Schema(
         ): selector.EntitySelector(
             selector.EntityFilterSelectorConfig(domain=["sensor"])
         ),
-        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=0): vol.All(
+        # No default. voluptuous materialises a default during validation
+        # rather than only displaying it, so `default=0` persisted a threshold
+        # of 0 into every entry whether or not the user touched the field. A
+        # threshold of 0 gates nothing: outside_high becomes `outside > 0` and
+        # predictive_heat becomes `forecast > 2`, so summer mode fired
+        # year-round. Absent means absent, which is the None path
+        # calculation.py:398 and :417 already handle.
+        vol.Optional(CONF_OUTSIDE_THRESHOLD, default=vol.UNDEFINED): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=100)
         ),
         vol.Optional(
@@ -284,9 +291,7 @@ CLIMATE_OPTIONS = vol.Schema(
             selector.EntityFilterSelectorConfig(domain="sensor")
         ),
         vol.Optional(CONF_WINDOW_ENTITY, default=[]): selector.EntitySelector(
-            selector.EntityFilterSelectorConfig(
-                domain="binary_sensor", multiple=True
-            )
+            selector.EntityFilterSelectorConfig(domain="binary_sensor", multiple=True)
         ),
         vol.Optional(
             CONF_WINDOW_OPEN_HOLD, default=DEFAULT_WINDOW_OPEN_HOLD
@@ -303,7 +308,8 @@ WEATHER_OPTIONS = vol.Schema(
         vol.Optional(
             # Omit "cloudy": with no cloud-% sensor, weather state "cloudy"
             # must not count as sunny (that defeated the overcast gate).
-            CONF_WEATHER_STATE, default=["sunny", "partlycloudy", "clear"]
+            CONF_WEATHER_STATE,
+            default=["sunny", "partlycloudy", "clear"],
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 multiple=True,
@@ -389,6 +395,29 @@ INTERPOLATION_OPTIONS = vol.Schema(
 def _get_azimuth_edges(data) -> tuple[int, int]:
     """Calculate azimuth edges."""
     return data[CONF_FOV_LEFT] + data[CONF_FOV_RIGHT]
+
+
+def _climate_threshold_error(user_input: dict[str, Any]) -> dict[str, str] | None:
+    """Reject a comfort band whose low is not below its high.
+
+    Both bounds have their own slider, so nothing stops temp_low >= temp_high.
+    That configuration silently disables one season: is_summer needs
+    `current > temp_high` and is_winter needs `current < temp_low`, so an
+    inverted band makes both true for every reading in between and a band of
+    zero width makes the covers flip on a single degree of noise. The WARNING
+    removed in v0.3.15 claimed to catch this and never could -- it fired on a
+    season overlap that had a different cause entirely.
+    """
+    low = user_input.get(CONF_TEMP_LOW)
+    high = user_input.get(CONF_TEMP_HIGH)
+    if low is None or high is None:
+        return None
+    try:
+        if float(low) >= float(high):
+            return {CONF_TEMP_HIGH: "temp_high_not_above_low"}
+    except (TypeError, ValueError):
+        return None
+    return None
 
 
 class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -575,6 +604,11 @@ class ConfigFlowHandler(ConfigFlow, domain=DOMAIN):
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
         """Manage climate options."""
         if user_input is not None:
+            error = _climate_threshold_error(user_input)
+            if error:
+                return self.async_show_form(
+                    step_id="climate", data_schema=CLIMATE_OPTIONS, errors=error
+                )
             self.config.update(user_input)
             if self.config.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
@@ -866,15 +900,29 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_climate(self, user_input: dict[str, Any] | None = None):
         """Manage climate options."""
         if user_input is not None:
-            entities = [
+            error = _climate_threshold_error(user_input)
+            if error:
+                return self.async_show_form(
+                    step_id="climate",
+                    data_schema=self.add_suggested_values_to_schema(
+                        CLIMATE_OPTIONS, user_input
+                    ),
+                    errors=error,
+                )
+            clearable = [
                 CONF_OUTSIDETEMP_ENTITY,
                 CONF_WEATHER_ENTITY,
                 CONF_CLOUD_COVERAGE_ENTITY,
                 CONF_PRESENCE_ENTITY,
                 CONF_LUX_ENTITY,
                 CONF_IRRADIANCE_ENTITY,
+                # Not an entity, but the same problem: now that the schema has
+                # no default, a blank submission omits the key entirely, and
+                # options.update() below would leave the old value in place --
+                # so a threshold once set could never be cleared.
+                CONF_OUTSIDE_THRESHOLD,
             ]
-            self.optional_entities(entities, user_input)
+            self.optional_entities(clearable, user_input)
             self.options.update(user_input)
             if self.options.get(CONF_WEATHER_ENTITY):
                 return await self.async_step_weather()
@@ -892,9 +940,7 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="climate",
-            data_schema=self.add_suggested_values_to_schema(
-                CLIMATE_OPTIONS, suggested
-            ),
+            data_schema=self.add_suggested_values_to_schema(CLIMATE_OPTIONS, suggested),
         )
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None):
