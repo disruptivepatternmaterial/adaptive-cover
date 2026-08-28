@@ -3,9 +3,27 @@ description: Enforce review and release gates before publishing tags
 alwaysApply: true
 ---
 
+# Local validation
+
+Execution-first behavior and the definition of done live in `00-execution.mdc`. This rule adds
+what "verified" means concretely in this repo.
+
+For any non-trivial change:
+
+1. Run `scripts/check` (or the equivalent lint + tests).
+2. Run `python3 scripts/validate_release_metadata.py` when release, docs, or version files are touched.
+3. Report exact command results, including failures and residual risk. Never fabricate repository state or command output.
+
+Quality bar:
+
+- Add a regression test for every bug fix.
+- Update user-facing docs when behavior changes.
+- Prefer minimal, focused edits that are easy to review.
+
 # Review Gates
 
-- For substantial changes, run periodic multi-model review and synthesize findings by severity.
+- For substantial changes, run a multi-model review and synthesize findings by severity.
+- Two concurrent reviewer subagents maximum, run in the foreground, per `~/.cursor/rules/subagent-delegation.mdc`. You write the synthesis; reviewers only supply findings.
 - Prioritize bugs, regressions, security issues, spec drift, and weak tests.
 - Convert accepted findings into concrete fixes or explicit queued tasks.
 
