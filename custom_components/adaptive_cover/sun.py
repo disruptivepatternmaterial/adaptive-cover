@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 import pandas as pd
 from astral import Observer, sun as astral_sun
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 try:
     from homeassistant.helpers.sun import get_astral_observer
@@ -45,10 +46,21 @@ class SunData:
         self.observer = get_astral_observer(hass)
         self.timezone = timezone
 
+    def today(self) -> date:
+        """Return the current date in Home Assistant's configured timezone.
+
+        date.today() reads the date from the OS process timezone, which is
+        routinely UTC in a container while Home Assistant is configured for
+        somewhere else. For a user west of UTC that returns tomorrow's date
+        all evening, so the solar grid and the sunrise/sunset comparisons are
+        built for the wrong day.
+        """
+        return dt_util.now().date()
+
     @property
     def times(self) -> pd.DatetimeIndex:
         """Define time interval."""
-        start_date = date.today()
+        start_date = self.today()
         end_date = start_date + timedelta(days=1)
 
         times = pd.date_range(
@@ -76,11 +88,11 @@ class SunData:
 
     def sunset(self) -> datetime:
         """Fetch sunset time."""
-        return astral_sun.sunset(self.observer, date.today())
+        return astral_sun.sunset(self.observer, self.today())
 
     def sunrise(self) -> datetime:
         """Fetch sunrise time."""
-        return astral_sun.sunrise(self.observer, date.today())
+        return astral_sun.sunrise(self.observer, self.today())
 
     # def df_today(self)-> pd.DataFrame:
     #     """Create dataframe with azimuth and elevation data"""

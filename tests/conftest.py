@@ -279,6 +279,25 @@ _mod(
     split_entity_id=lambda entity: entity.split(".", 1),
 )
 _mod("homeassistant.data_entry_flow", FlowResult=dict)
+
+
+def _dt_now(time_zone=None):  # noqa: ANN001
+    """Mirror homeassistant.util.dt.now(): wall clock in HA's timezone."""
+    return dt.datetime.now(time_zone or _util_dt_module.DEFAULT_TIME_ZONE)
+
+
+def _dt_utcnow():
+    return dt.datetime.now(UTC)
+
+
+_util_module = _mod("homeassistant.util")
+_util_dt_module = _mod(
+    "homeassistant.util.dt",
+    DEFAULT_TIME_ZONE=UTC,
+    now=_dt_now,
+    utcnow=_dt_utcnow,
+)
+_util_module.dt = _util_dt_module
 helpers_module = _mod("homeassistant.helpers")
 _mod(
     "homeassistant.helpers.event",

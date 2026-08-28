@@ -26,6 +26,7 @@ from homeassistant.core import (
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .config_context_adapter import ConfigContextAdapter
 
@@ -202,6 +203,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._start_time = None
         self._sun_end_time = None
         self._sun_start_time = None
+        self._sun_times_date = None
         # self._end_time = None
         self.manual_reset = config_entry.options.get(CONF_MANUAL_OVERRIDE_RESET, False)
         self.manual_duration = _normalize_manual_duration(
@@ -614,6 +616,27 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         except Exception as err:
             raise UpdateFailed(f"Adaptive Cover update failed: {err}") from err
 
+    async def _async_solar_times(self, normal_cover):
+        """Return today's solar window, recomputing at most once per local day.
+
+        The window comes from a full day of 5-minute samples, so it is built in
+        the executor and cached. The cache is keyed on the date it was built
+        for, in Home Assistant's timezone, because the two obvious shortcuts
+        both misfire: keying on the result means a window the sun never reaches
+        (solar_times() returns None, None) rebuilds all 289 samples every
+        cycle, and comparing against a UTC date rolls the day over at the wrong
+        hour for every user outside UTC.
+        """
+        today = dt_util.now().date()
+        if self.first_refresh or self._sun_times_date != today:
+            self.logger.debug("Calculating solar times")
+            start, end = await self.hass.async_add_executor_job(normal_cover.solar_times)
+            self._sun_start_time = start
+            self._sun_end_time = end
+            self._sun_times_date = today
+            self.logger.debug("Sun start time: %s, Sun end time: %s", start, end)
+        return self._sun_start_time, self._sun_end_time
+
     async def _async_refresh_data(self) -> AdaptiveCoverData:
         """Fetch coordinator data for this update cycle."""
         self.logger.debug("Updating data")
@@ -663,19 +686,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             await self.async_handle_timed_refresh(options)
 
         normal_cover = self.normal_cover_state.cover
-        # Run the solar_times method in a separate thread
-        if (
-            self.first_refresh
-            or self._sun_start_time is None
-            or dt.datetime.now(dt.UTC).date() != self._sun_start_time.date()
-        ):
-            self.logger.debug("Calculating solar times")
-            start, end = await self.hass.async_add_executor_job(normal_cover.solar_times)
-            self._sun_start_time = start
-            self._sun_end_time = end
-            self.logger.debug("Sun start time: %s, Sun end time: %s", start, end)
-        else:
-            start, end = self._sun_start_time, self._sun_end_time
+        start, end = await self._async_solar_times(normal_cover)
         state = int(round(state))
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
