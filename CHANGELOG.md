@@ -4,6 +4,98 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.17] — 2026-08-28
+
+### Fixed
+
+- **Summer heat rejection engaged year-round.** The climate options schema declared
+  `outside_threshold` with `default=0`, and voluptuous materialises a default while
+  *validating* rather than only offering it in the form — so every config entry ever
+  created stored a minimum outside temperature of 0 whether or not the field was touched.
+  A threshold of 0 gates nothing: the outdoor check degrades to `outside > 0` and the
+  predictive check to `forecast > 2`, so a 5 °C March morning forecast to reach 8 °C
+  registered as summer. This is the actual cause of the `is_summer`/`is_winter` overlap
+  that v0.3.15 addressed at the symptom level.
+
+  Existing entries are migrated: a stored threshold of exactly 0 is removed, logged per
+  entry at INFO. Zero was unreachable as a deliberate choice, since the field was optional
+  and the slider floor is 0, so leaving it alone produced the same value. **If you did
+  intend a threshold of 0, re-enter 1** in the climate options.
+
+- **A failed cover command froze manual detection for 90 seconds.** `async_set_manual_position`
+  marked the cover as integration-driven before awaiting the cover service — necessary,
+  because Home Assistant can deliver the resulting state-change event during that await —
+  but nothing rolled the mark back if the call raised. After an unavailable cover or a
+  failing cover integration, a genuine manual move was attributed to the integration and
+  did not latch manual override.
+
+- **Cover events during startup could consume command tracking.**
+  `docs/specs/behavioral-contract.md` has stated since v0.3.13 that cover events before
+  switch restore must not consume command-tracking. The drive paths were gated on it; the
+  event entry point was not.
+
+- **One failed forecast fetch disabled predictive heat for the whole house.** The shared
+  forecast cache blanked its value before each attempt while only writing it on success, so
+  a single transient weather failure served `None` to every config entry sharing that
+  weather entity for the full 60-second retry window. The last known good value is now
+  kept. A wedged weather integration also held the shared lock indefinitely; fetches are
+  now bounded at 30 seconds, absorbed locally so a slow *optional* forecast cannot take
+  every entity on the entry unavailable.
+
+- **The shared forecast cache leaked across reloads.** It lived in `hass.data[DOMAIN]`
+  beside the `entry_id → coordinator` mapping and was never released, so every cache record
+  and its `asyncio.Lock` outlived the last config entry. It now sits under a reserved key
+  and is released when no remaining entry needs it. Unloading an entry that never finished
+  setup no longer raises a `KeyError` that masks the real error.
+
+- **An inverted comfort band was accepted silently.** `temp_low ≥ temp_high` disables a
+  season outright; both flows now reject it with an error on the field. This is the
+  misconfiguration the WARNING removed in v0.3.15 claimed to detect and never could.
+
+- **CHANGELOG documented a change that is not in this repository.** The v0.3.15 notes
+  described removing a blocking file write on a hardcoded path from `is_sunny()`. No such
+  code exists in the history — it was made and removed only on the live install, so a
+  bisect against the CHANGELOG could not find it. Removed, and
+  `scripts/validate_runtime_deps.py` now fails on blocking file I/O so the drift cannot
+  recur silently.
+
+### Changed
+
+- The declared Home Assistant floor now agrees across `hacs.json`, `requirements.txt`, and
+  `pyproject.toml`. It disagreed three ways (`2024.5.0b1` / `~=2024.5` / `>=2024.4.0`);
+  all three now say 2024.5, and `scripts/check` fails if they drift apart.
+- `custom_components` is now covered by `ruff format --check`, not only `ruff check`.
+
+### Testing
+
+- **The suite was silently testing a stub instead of pandas.** `tests/conftest.py` stubbed
+  `pytz`, which no longer appears anywhere in the integration. That poisoned `sys.modules`
+  before the pandas import two blocks below, so pandas raised "Can't determine version for
+  pytz" and was replaced by a stub whose `date_range` returns `[]` — turning every
+  solar-grid assertion into a tautology. `pytest.importorskip` cannot detect this, because
+  the stub *is* the module. Stubs are now marked, `tests/harness.py:requires_real` replaces
+  `importorskip`, and `tests/test_harness_integrity.py` fails when an installed package has
+  been stubbed.
+- `tests/test_sun_observer.py` asserted the *presence* of an astral 2.2 defect, so
+  upgrading astral would have turned CI red on a correctness improvement. It now asserts a
+  version-independent property.
+- A second CI lane runs on pandas 3 and current astral — the only installable configuration
+  where `pytz` is genuinely absent, since astral 2.2 raises `ImportError` without it and
+  pandas 2.x requires it unconditionally.
+- `scripts/validate_runtime_deps.py` now has tests of its own.
+- 182 tests, up from 137.
+
+### Note on the elevation claim
+
+The v0.3.16 entry stating that sunrise/sunset now honour the configured elevation
+("sunset +139 s and sunrise -140 s" at 48.78 N / 137 m) was reviewed as possibly false, on
+the grounds that astral gates the adjustment on `isinstance(observer.elevation, float)`
+while Home Assistant declares elevation as `int`. Both facts are correct and both are
+irrelevant: `Observer.__setattr__` coerces the value to `float` on the way in. Measured
+directly, the deltas are +139.6 s and −139.8 s. **The claim is true and stands.**
+
+---
+
 ## [0.3.16] — 2026-08-28
 
 ### Fixed

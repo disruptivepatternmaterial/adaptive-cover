@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.16](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.16)
+**Current release:** [v0.3.17](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.17)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.13"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.17"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 
@@ -61,6 +61,37 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.17 — Summer gating, failed-command recovery, forecast cache isolation
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- **Summer heat rejection engaged year-round.** The climate schema's `default=0` for the
+  minimum outside temperature was materialised during validation and persisted into every
+  entry, and a threshold of 0 gates nothing. Existing entries are migrated. **If you
+  deliberately set a threshold of 0, re-enter 1.**
+- A cover command that failed left the cover marked as integration-driven for 90 seconds,
+  during which a real manual move did not latch manual override.
+- Cover events arriving before switch restore could consume command tracking, which the
+  behavioural contract already forbade in writing.
+- One failed forecast fetch blanked the shared cache for every entry using that weather
+  entity; the last known good value is now kept, and fetches are bounded at 30 s.
+- The shared forecast cache is now released on unload instead of outliving every entry.
+- An inverted comfort band (`temp_low ≥ temp_high`) is rejected instead of silently
+  disabling a season.
+- The test suite had been running against a stubbed pandas whose `date_range` returned an
+  empty list, so the solar-grid tests were asserting nothing. 182 tests, up from 137.
+
+### v0.3.16 — HA 2026.7 compatibility, declared dependencies, timezone-correct solar data
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- The integration failed to load entirely on Core older than 2026.7, because
+  `get_astral_observer` was imported unguarded. Now guarded with a fallback.
+- `numpy` and `python-dateutil` were imported at runtime but undeclared in
+  `manifest.json`, arriving only transitively through pandas.
+- Solar calculations used the OS process timezone rather than the configured one, which
+  builds the grid for the wrong day for anyone west of UTC in a UTC container.
 
 ### v0.3.15 — HA 2026.8 astral migration, season exclusivity, shared forecast cache
 
