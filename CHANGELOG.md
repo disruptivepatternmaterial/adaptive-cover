@@ -111,12 +111,9 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
   with no change to the TTL, the daily/twice_daily fallback, or the fail-to-`None`
   behaviour.
 
-- **Blocking file write inside the event loop.** A block of leftover debugging opened a
-  hardcoded absolute path on every `is_sunny()` evaluation, tripping HA's
-  blocking-call detector. Removed. The `is_sunny` overcast refinement it was instrumenting
-  (high cloud percentage only forces overcast when the weather condition is itself
-  overcast-like) had only ever been applied in place on a live install and is committed
-  here.
+- **`is_sunny` overcast refinement.** High cloud percentage only forces overcast when the
+  weather condition is itself overcast-like. Previously applied in place on a live install
+  and committed here.
 
 ### Added
 
