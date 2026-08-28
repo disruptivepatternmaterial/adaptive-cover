@@ -45,13 +45,21 @@ def arctic_sun_data(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_astral_still_raises_for_a_polar_day() -> None:
-    """Guard the premise: if astral stops raising, these tests prove nothing."""
+    """Guard the premise: if astral stops raising, these tests prove nothing.
+
+    Only the type is asserted, because the message depends on the interpreter.
+    astral rewrites the acos failure into "Sun is always above the horizon on
+    this day" only when it matches on `exc.args[0] == "math domain error"`,
+    which is how CPython worded it up to 3.12. From 3.13 the wording became
+    "expected a number in range from -1 up to 1, got ...", so astral's check
+    misses and the raw domain error surfaces instead.
+    """
     astral = pytest.importorskip("astral")
     from astral import sun as astral_sun
 
     observer = astral.Observer(TROMSO_LAT, TROMSO_LON, 0)
     for event in (astral_sun.sunrise, astral_sun.sunset):
-        with pytest.raises(ValueError, match="range from -1"):
+        with pytest.raises(ValueError):
             event(observer, POLAR_DAY)
 
 
