@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.17](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.17)
+**Current release:** [v0.3.18](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.18)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,9 +41,10 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.17"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.18"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
+| Safety smoke test | Open the pano door → every managed shade drives to the safe open target and stays there until the door reads closed for the full hold |
 
 ---
 
@@ -61,6 +62,24 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.18 — Window/door interlock is now authoritative
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- **Managed shades could sit closed while a configured door was open.** Every path that can
+  command a cover — coordinator refresh, cover events, startup, the timed sunset drive, the
+  Reset Manual Override button, and the Toggle Control switch — now resolves its target
+  through one safety-aware chokepoint that re-reads the contact at the moment of dispatch.
+- The interlock outranks adaptive control, manual override, and Toggle Control instead of
+  being retired by them, and a contested move reasserts the safe target rather than latching
+  as a manual override.
+- A contact is treated as closed **only** when Home Assistant explicitly reports `off`;
+  missing, `unknown`, and `unavailable` now fail safe as open.
+- Cover service calls are awaited with a bounded timeout, so a dispatch failure is observed
+  and rolled back, and one dead motor no longer stops the remaining shades in the doorway
+  from receiving the safety command.
+- A configured maximum position remains a hard limit on the safe target.
 
 ### v0.3.17 — Summer gating, failed-command recovery, forecast cache isolation
 
@@ -333,6 +352,24 @@ Split into presence and no-presence strategies:
 
 **Predictive summer detection:** when a weather entity is configured, `weather.get_forecasts` is called to retrieve today's forecast high. If the forecast exceeds the outdoor threshold by 2°, summer mode activates before the room heats up.
 
+### Window/door safety
+
+When a window or door contact is configured, the safe-open target has priority
+over adaptive control, manual-override detection, timed moves, and the Toggle
+Control switch. A contact is considered safely closed only when Home Assistant
+explicitly reports `off`; missing, `unknown`, and `unavailable` states keep the
+interlock active. After an explicit close, Window Open Hold keeps the cover open
+for the configured period to absorb contact-sensor flicker.
+
+The safe target is fully open unless Maximum Position defines a lower
+hardware-safe limit. Cover commands use a bounded service timeout, continue
+across other covers if one motor fails, and release command tracking even when a
+cover never reports another state.
+
+The Cover Position sensor publishes this effective safe target while the
+interlock is active, not the lower sun/climate calculation that is being
+suppressed.
+
 ---
 
 ## Variables
@@ -381,7 +418,7 @@ Split into presence and no-presence strategies:
 
 | Entity | Description |
 |--------|-------------|
-| `sensor.{name}_cover_position` | Calculated target position (%) |
+| `sensor.{name}_cover_position` | Effective commanded target position (%) |
 | `sensor.{name}_start_sun` | Timestamp when sun enters the window FOV today |
 | `sensor.{name}_end_sun` | Timestamp when sun leaves the window FOV today |
 | `sensor.{name}_control_method` | `winter` / `summer` / `intermediate` / `basic` |

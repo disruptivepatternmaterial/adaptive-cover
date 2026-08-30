@@ -17,7 +17,7 @@ name = "adaptive_cover"
 packages = []
 readme = "README.md"
 repository = "https://github.com/disruptivepatternmaterial/adaptive-cover"
-version = "0.3.17"
+version = "0.3.18"
 
 [tool.poetry.dependencies]
 # Must match hacs.json and requirements.txt; scripts/validate_runtime_deps.py

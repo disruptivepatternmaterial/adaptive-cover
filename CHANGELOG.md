@@ -4,6 +4,36 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.18] — 2026-08-29
+
+### Fixed
+
+- **A configured open door could coexist with closed managed shades.** The
+  window/door interlock now has one effective target across coordinator events,
+  cover events, the reset button, the control switch, and the published Cover
+  Position sensor. It outranks adaptive-control and manual-override toggles,
+  reasserts the safe target instead of latching a contested move as manual, and
+  treats missing, `unknown`, or `unavailable` contacts as unsafe until Home
+  Assistant explicitly reports `off`. Cover service calls are awaited so
+  dispatch failures roll back command tracking, and one failed motor no longer
+  prevents the remaining covers from receiving the safety command. A bounded
+  service timeout prevents a stalled platform from blocking later covers, and a
+  real command-tracking timer no longer depends on a later event to release.
+  Configured maximum positions remain hard limits for the safety target.
+  Position comparison now uses the same settle tolerance as manual detection, so
+  a shade that stops at 99% is no longer re-commanded to 100% forever.
+  Regression coverage reproduces the production pano-door incident in which the
+  center shade reported 4% while the door was open.
+  ([#25](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/25),
+  [#26](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/26),
+  [#27](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/27),
+  [#28](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/28),
+  [#29](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/29),
+  [#33](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/33),
+  [#35](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/35),
+  [#36](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/36),
+  [#68](https://github.com/disruptivepatternmaterial/adaptive-cover/issues/68))
+
 ## [0.3.17] — 2026-08-28
 
 ### Fixed
