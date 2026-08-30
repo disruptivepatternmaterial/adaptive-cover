@@ -139,6 +139,7 @@ class AdaptiveCoverSwitch(
         self._attr_translation_key = key
         self._device_name = self.type[config_entry.data[CONF_SENSOR_TYPE]]
         self._switch_name = switch_name
+        self._config_entry = config_entry
         self._attr_device_class = device_class
         self._initial_state = initial_state
         self._attr_unique_id = f"{unique_id}_{switch_name}"
@@ -161,14 +162,18 @@ class AdaptiveCoverSwitch(
         self._attr_is_on = True
         setattr(self.coordinator, self._key, True)
         if self._key == "control_toggle" and kwargs.get("added") is not True:
+            window_open = self.coordinator.is_window_open
+            target = self.coordinator.get_effective_state(
+                self.coordinator.state,
+                self._config_entry.options,
+                window_open=window_open,
+            )
             for entity in self.coordinator.entities:
-                if (
+                if window_open or (
                     not self.coordinator.manager.is_cover_manual(entity)
                     and self.coordinator.check_adaptive_time
                 ):
-                    await self.coordinator.async_set_position(
-                        entity, self.coordinator.state
-                    )
+                    await self.coordinator.async_set_position(entity, target)
         await self.coordinator.async_refresh()
         self.schedule_update_ha_state()
 

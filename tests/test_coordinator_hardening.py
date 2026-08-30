@@ -188,7 +188,7 @@ def test_toggles_off_clears_wait_and_target() -> None:
         new_state=SimpleNamespace(state="closed", attributes={"current_position": 0}),
     )
 
-    _run(coordinator.async_handle_cover_state_change(100))
+    _run(coordinator.async_handle_cover_state_change(100, {}))
 
     assert coordinator.wait_for_target["cover.kitchen"] is False
     assert "cover.kitchen" not in coordinator.target_call
@@ -213,7 +213,7 @@ def test_pre_restore_cover_change_preserves_wait_and_target() -> None:
         new_state=SimpleNamespace(state="closed", attributes={"current_position": 0}),
     )
 
-    _run(coordinator.async_handle_cover_state_change(100))
+    _run(coordinator.async_handle_cover_state_change(100, {}))
 
     assert coordinator.wait_for_target["cover.kitchen"] is True
     assert coordinator.target_call["cover.kitchen"] == 100
@@ -330,8 +330,8 @@ def test_pos_sun_fallback_when_sun_entity_missing() -> None:
     assert coordinator.pos_sun == [0.0, -90.0]
 
 
-def test_manager_consumes_target_call_before_manual_detect() -> None:
-    """Target guard should clear tracked target and skip manual detection."""
+def test_manager_retains_last_target_to_ignore_duplicate_settle_reports() -> None:
+    """Repeated reports at our last target must not become manual movement."""
     manager = AdaptiveCoverManager.__new__(AdaptiveCoverManager)
     manager.covers = {"cover.kitchen"}
     manager.manual_control = {}
@@ -362,7 +362,20 @@ def test_manager_consumes_target_call_before_manual_detect() -> None:
         target_call=target_call,
     )
 
-    assert "cover.kitchen" not in target_call
+    assert target_call["cover.kitchen"] == 100
+    manager.mark_manual_control.assert_not_called()
+
+    manager.handle_state_change(
+        states_data=event,
+        our_state=40,
+        blind_type="cover_blind",
+        allow_reset=False,
+        wait_target_call={"cover.kitchen": False},
+        manual_threshold=5,
+        target_call=target_call,
+    )
+
+    assert target_call["cover.kitchen"] == 100
     manager.mark_manual_control.assert_not_called()
 
 
@@ -396,6 +409,170 @@ def test_window_latch_listener_replaced_on_reschedule() -> None:
     stale_cancel.assert_called_once()
     assert coordinator._window_latch_listeners == [new_cancel]
     coordinator.async_refresh.assert_awaited_once()
+
+
+def test_unavailable_recovery_from_known_closed_does_not_start_hold() -> None:
+    """A sensor blip must not create an unnecessary five-minute motor cycle."""
+    coordinator = _coordinator_shell()
+    coordinator.logger = MagicMock()
+    coordinator.window_open_hold = 300
+    coordinator.window_entities = ["binary_sensor.kitchen_window"]
+    coordinator._window_known_states = {"binary_sensor.kitchen_window": "off"}
+    coordinator._last_window_open_ts = None
+    coordinator._window_latch_listeners = []
+    coordinator.hass = SimpleNamespace(
+        states=SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(state="off")))
+    )
+    coordinator.async_refresh = AsyncMock()
+    coordinator.state_change = False
+    unavailable_event = SimpleNamespace(
+        data={
+            "entity_id": "binary_sensor.kitchen_window",
+            "old_state": SimpleNamespace(state="off"),
+            "new_state": SimpleNamespace(state="unavailable"),
+        }
+    )
+    recovered_event = SimpleNamespace(
+        data={
+            "entity_id": "binary_sensor.kitchen_window",
+            "old_state": SimpleNamespace(state="unavailable"),
+            "new_state": SimpleNamespace(state="off"),
+        }
+    )
+
+    with patch(
+        "custom_components.adaptive_cover.coordinator.async_track_point_in_time"
+    ) as track:
+        _run(coordinator.async_check_entity_state_change(unavailable_event))
+        _run(coordinator.async_check_entity_state_change(recovered_event))
+
+    track.assert_not_called()
+    assert coordinator._last_window_open_ts is None
+    assert coordinator.is_window_open is False
+
+
+def _window_state_coordinator(raw_state: str | None) -> AdaptiveDataUpdateCoordinator:
+    """Build the minimum coordinator state needed by the door interlock."""
+    coordinator = _coordinator_shell()
+    state = None if raw_state is None else SimpleNamespace(state=raw_state)
+    coordinator.hass = SimpleNamespace(
+        states=SimpleNamespace(get=MagicMock(return_value=state))
+    )
+    coordinator.window_entities = ["binary_sensor.pano_door"]
+    coordinator.window_open_hold = 300
+    coordinator._last_window_open_ts = None
+    coordinator._inverse_state = False
+    return coordinator
+
+
+def test_window_interlock_requires_explicitly_closed_contact() -> None:
+    """Missing, unknown, and unavailable contacts must fail safe as open."""
+    for raw_state in (None, "unknown", "unavailable", "on"):
+        assert _window_state_coordinator(raw_state).is_window_open is True
+
+    assert _window_state_coordinator("off").is_window_open is False
+
+
+def test_window_interlock_is_the_effective_published_target() -> None:
+    """The public target must not advertise a closing command during interlock."""
+    coordinator = _window_state_coordinator("on")
+
+    assert coordinator.get_effective_state(4, options={}, window_open=True) == 100
+    assert coordinator.get_effective_state(4, options={}, window_open=False) == 4
+
+
+def test_door_open_enforces_safe_target_with_control_disabled() -> None:
+    """Safety outranks adaptive control and an incomplete switch restore."""
+    coordinator = _coordinator_shell()
+    coordinator._switches_restored = False
+    coordinator._control_toggle = False
+    coordinator.state_change = True
+    coordinator.logger = MagicMock()
+    coordinator._async_enforce_window_interlock = AsyncMock()
+
+    _run(coordinator.async_handle_state_change(100, options={}, window_open=True))
+
+    coordinator._async_enforce_window_interlock.assert_awaited_once_with({})
+    assert coordinator.state_change is False
+
+
+def test_cover_drop_during_open_door_reasserts_without_manual_latch() -> None:
+    """A shade closing into an open doorway is contested safety, not manual hold."""
+    coordinator = _coordinator_shell()
+    coordinator._switches_restored = True
+    coordinator._manual_toggle = True
+    coordinator._control_toggle = True
+    coordinator.cover_state_change = True
+    coordinator.logger = MagicMock()
+    coordinator.manager = MagicMock()
+    coordinator.hass = SimpleNamespace(
+        states=SimpleNamespace(get=MagicMock(return_value=SimpleNamespace(state="on")))
+    )
+    coordinator.window_entities = ["binary_sensor.pano_door"]
+    coordinator.window_open_hold = 300
+    coordinator._last_window_open_ts = None
+    coordinator._async_enforce_window_interlock = AsyncMock()
+    coordinator.state_change_data = StateChangedData(
+        "cover.panoramic_door_center",
+        old_state=SimpleNamespace(
+            state="closing", attributes={"current_position": 100}
+        ),
+        new_state=SimpleNamespace(state="open", attributes={"current_position": 4}),
+    )
+
+    _run(
+        coordinator.async_handle_cover_state_change(100, options={}, window_open=False)
+    )
+
+    coordinator.manager.handle_state_change.assert_not_called()
+    coordinator._async_enforce_window_interlock.assert_awaited_once_with({})
+    assert coordinator.cover_state_change is False
+
+
+def test_refresh_publishes_window_interlock_target_not_solar_target() -> None:
+    """An echo automation must see 100 even when the door opens mid-refresh."""
+    coordinator = _window_state_coordinator("on")
+    coordinator.hass.states.get.side_effect = [
+        SimpleNamespace(state="off"),
+        SimpleNamespace(state="on"),
+    ]
+    coordinator.logger = MagicMock()
+    coordinator.first_refresh = False
+    coordinator.config_entry = SimpleNamespace(options={})
+    coordinator._update_options = MagicMock()
+    coordinator.get_blind_data = MagicMock(return_value=object())
+    coordinator._update_manager_and_covers = MagicMock()
+    coordinator._climate_mode = False
+    coordinator._switch_mode = False
+    coordinator._use_interpolation = False
+    coordinator.climate_state = None
+    coordinator.control_method = "intermediate"
+    coordinator.manager = SimpleNamespace(
+        reset_if_needed=AsyncMock(),
+        binary_cover_manual=False,
+        manual_controlled=[],
+    )
+    coordinator.end_time_entity = None
+    coordinator.end_time = None
+    coordinator._track_end_time = False
+    coordinator._scheduled_time = dt.datetime.now()
+    coordinator.state_change = False
+    coordinator.cover_state_change = False
+    coordinator.timed_refresh = False
+    coordinator._async_solar_times = AsyncMock(return_value=(None, None))
+    normal = SimpleNamespace(
+        get_state=MagicMock(return_value=4),
+        cover=SimpleNamespace(valid=True),
+    )
+
+    with patch(
+        "custom_components.adaptive_cover.coordinator.NormalCoverState",
+        return_value=normal,
+    ):
+        data = _run(coordinator._async_refresh_data())
+
+    assert data.states["state"] == 100
+    assert data.states["explanation"] == "window_open"
 
 
 def test_unknown_weather_entity_clears_the_forecast_without_calling_out() -> None:

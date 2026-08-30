@@ -274,6 +274,7 @@ _mod(
     ATTR_ENTITY_ID="entity_id",
     SERVICE_SET_COVER_POSITION="set_cover_position",
     SERVICE_SET_COVER_TILT_POSITION="set_cover_tilt_position",
+    STATE_ON="on",
     Platform=SimpleNamespace(
         SENSOR="sensor",
         SWITCH="switch",
@@ -314,6 +315,7 @@ _util_module.dt = _util_dt_module
 helpers_module = _mod("homeassistant.helpers")
 _mod(
     "homeassistant.helpers.event",
+    async_call_later=MagicMock(return_value=MagicMock()),
     async_track_point_in_time=MagicMock,
     async_track_state_change_event=MagicMock,
 )
@@ -348,6 +350,7 @@ _mod(
     "homeassistant.helpers.entity_platform",
     AddEntitiesCallback=MagicMock,
 )
+_mod("homeassistant.helpers.restore_state", RestoreEntity=type("RestoreEntity", (), {}))
 
 
 class _SelectEntity:
@@ -358,10 +361,23 @@ class _ButtonEntity:
     """Minimal ButtonEntity stand-in (distinct class to keep MRO valid)."""
 
 
+class _SwitchEntity:
+    """Minimal SwitchEntity stand-in (distinct class to keep MRO valid)."""
+
+
+class _SwitchDeviceClass:
+    """Minimal SwitchDeviceClass stand-in."""
+
+
 _mod("homeassistant.components")
 _mod("homeassistant.components.button", ButtonEntity=_ButtonEntity)
 _mod("homeassistant.components.cover", DOMAIN="cover")
 _mod("homeassistant.components.select", SelectEntity=_SelectEntity)
+_mod(
+    "homeassistant.components.switch",
+    SwitchDeviceClass=_SwitchDeviceClass,
+    SwitchEntity=_SwitchEntity,
+)
 _mod(
     "homeassistant.components.diagnostics", async_redact_data=lambda data, _redact: data
 )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import suppress
 import datetime as dt
 import logging
@@ -24,7 +25,7 @@ from homeassistant.core import (
     State,
     callback,
 )
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import async_call_later, async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -163,6 +164,10 @@ class AdaptiveCoverData:
     attributes: dict
 
 
+class CoverCommandError(RuntimeError):
+    """Raised when Home Assistant cannot dispatch a cover command."""
+
+
 # hass.data[DOMAIN] maps entry_id -> coordinator and nothing else. Anything
 # shared between entries goes one level down, under this reserved key, so a
 # future `for coordinator in hass.data[DOMAIN].values()` cannot trip over it.
@@ -191,6 +196,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     config_entry: ConfigEntry
 
     _WAIT_FOR_TARGET_TIMEOUT_S = 90
+    _COVER_SERVICE_TIMEOUT_S = 10
     _FORECAST_CACHE_TTL = dt.timedelta(minutes=15)
     _FORECAST_FAILURE_RETRY_TTL = dt.timedelta(seconds=60)
     # A wedged weather integration must not hold the shared lock forever;
@@ -261,6 +267,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self._last_window_open_ts: float | None = None
         self.window_open_hold: int = DEFAULT_WINDOW_OPEN_HOLD
         self._window_latch_listeners: list = []
+        self._window_known_states: dict[str, str] = {}
+        self._command_timeout_listeners: dict[str, Callable[[], None]] = {}
 
     async def _async_update_forecast_max(self, weather_entity: str | None) -> None:
         """Fetch today's max temperature via the weather.get_forecasts service.
@@ -427,9 +435,32 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def async_cancel_scheduled_callbacks(self) -> None:
         """Cancel all scheduled point-in-time callbacks for this coordinator."""
         self._async_cancel_update_listener()
+        self._cancel_window_latch_listeners()
+        for cancel in self._command_timeout_listeners.values():
+            cancel()
+        self._command_timeout_listeners.clear()
+
+    def _cancel_window_latch_listeners(self) -> None:
+        """Cancel pending window-close hold refreshes."""
         for cancel in self._window_latch_listeners:
             cancel()
         self._window_latch_listeners.clear()
+
+    def _schedule_window_latch_release(
+        self, entity_id: str, delay_seconds: float
+    ) -> None:
+        """Schedule the refresh that releases a confirmed-close hold."""
+        self._cancel_window_latch_listeners()
+        release_at = dt.datetime.now(UTC) + dt.timedelta(seconds=delay_seconds + 1)
+        self.logger.debug(
+            "Window %s became closed; scheduling latch release refresh at %s",
+            entity_id,
+            release_at,
+        )
+        cancel_listener = async_track_point_in_time(
+            self.hass, self._async_release_window_latch, release_at
+        )
+        self._window_latch_listeners.append(cancel_listener)
 
     async def async_timed_refresh(self, event) -> None:
         """Control state at end time."""
@@ -486,37 +517,54 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         entity_id = data.get("entity_id")
         new_state = data.get("new_state")
         old_state = data.get("old_state")
-        # If a tracked window/door just transitioned on -> off, the
-        # is_window_open latch will hold "open" for window_open_hold
-        # seconds. Schedule a one-shot refresh just after that hold
-        # expires so the cover can release back to the calculated
-        # position; without this, nothing would prompt the coordinator
-        # to re-evaluate until the next sun-tracking refresh.
-        if (
-            self.window_open_hold > 0
-            and entity_id in (getattr(self, "window_entities", []) or [])
-            and new_state is not None
-            and new_state.state == "off"
-            and old_state is not None
-            and old_state.state == "on"
+        window_entities = getattr(self, "window_entities", []) or []
+        is_window_event = entity_id in window_entities
+        new_window_state = new_state.state if new_state is not None else None
+        old_window_state = old_state.state if old_state is not None else None
+        known_states = getattr(self, "_window_known_states", None)
+        if known_states is None:
+            known_states = self._window_known_states = {}
+        previous_known_state = known_states.get(entity_id)
+        if is_window_event and new_window_state in ("on", "off"):
+            known_states[entity_id] = new_window_state
+
+        if is_window_event and new_window_state != "off":
+            # A safety contact is open or cannot prove that it is closed;
+            # any pending release is obsolete.
+            self._cancel_window_latch_listeners()
+        elif (
+            is_window_event
+            and self.window_open_hold > 0
+            and new_window_state == "off"
+            and (
+                previous_known_state == "on"
+                or (previous_known_state is None and old_window_state == "on")
+            )
         ):
-            # Keep only the latest pending release timer. Older timers are
-            # obsolete once a newer on->off transition occurs.
-            for cancel in self._window_latch_listeners:
-                cancel()
-            self._window_latch_listeners.clear()
-            release_at = dt.datetime.now(UTC) + dt.timedelta(
-                seconds=self.window_open_hold + 1
+            # The last definite contact state was open and it is now
+            # explicitly closed. Hold for the full configured period.
+            self._last_window_open_ts = time.monotonic()
+            self._schedule_window_latch_release(entity_id, self.window_open_hold)
+        elif is_window_event and new_window_state == "off":
+            # Recovery from unknown/unavailable after a last-known closed
+            # state is not a physical close and must not create a motor cycle.
+            all_closed = all(
+                (state := self.hass.states.get(window_id)) is not None
+                and state.state == "off"
+                for window_id in window_entities
             )
-            self.logger.debug(
-                "Window %s on->off; scheduling latch release refresh at %s",
-                entity_id,
-                release_at,
-            )
-            cancel_listener = async_track_point_in_time(
-                self.hass, self._async_release_window_latch, release_at
-            )
-            self._window_latch_listeners.append(cancel_listener)
+            if all_closed:
+                elapsed = (
+                    None
+                    if self._last_window_open_ts is None
+                    else time.monotonic() - self._last_window_open_ts
+                )
+                remaining = 0 if elapsed is None else self.window_open_hold - elapsed
+                if remaining > 0:
+                    self._schedule_window_latch_release(entity_id, remaining)
+                else:
+                    self._last_window_open_ts = None
+                    self._cancel_window_latch_listeners()
         self.state_change = True
         await self.async_refresh()
 
@@ -652,10 +700,46 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self, entity_id: str, *, clear_target: bool = True
     ) -> None:
         """Clear command-tracking state for a single cover."""
+        self._cancel_command_timeout(entity_id)
         self.wait_for_target[entity_id] = False
         if clear_target:
             self.target_call.pop(entity_id, None)
         self._wait_for_target_started_at.pop(entity_id, None)
+
+    def _cancel_command_timeout(self, entity_id: str) -> None:
+        """Cancel a pending command-tracking timeout for one cover."""
+        listeners = getattr(self, "_command_timeout_listeners", None)
+        if not listeners:
+            return
+        cancel = listeners.pop(entity_id, None)
+        if cancel is not None:
+            cancel()
+
+    def _schedule_command_timeout(self, entity_id: str, target: int) -> None:
+        """Release wait tracking even if the cover emits no later event."""
+        listeners = getattr(self, "_command_timeout_listeners", None)
+        if listeners is None:
+            listeners = self._command_timeout_listeners = {}
+        self._cancel_command_timeout(entity_id)
+
+        @callback
+        def _async_timeout(_now) -> None:
+            listeners.pop(entity_id, None)
+            if (
+                self.wait_for_target.get(entity_id)
+                and self.target_call.get(entity_id) == target
+            ):
+                self.logger.warning(
+                    "Timed out waiting for %s to report target %s; releasing "
+                    "wait state while retaining the commanded-target exemption",
+                    entity_id,
+                    target,
+                )
+                self._clear_wait_for_target(entity_id, clear_target=False)
+
+        listeners[entity_id] = async_call_later(
+            self.hass, self._WAIT_FOR_TARGET_TIMEOUT_S, _async_timeout
+        )
 
     async def async_timed_end_time(self) -> None:
         """Control state at end time."""
@@ -735,7 +819,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         self.default_state = int(round(self.normal_cover_state.get_state()))
         self.logger.debug("Determined default state to be %s", self.default_state)
-        state = self.state
+        calculated_state = self.state
+        window_open = self.is_window_open
+        state = self.get_effective_state(
+            calculated_state, options, window_open=window_open
+        )
 
         await self.manager.reset_if_needed()
 
@@ -745,17 +833,30 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
         # Handle types of changes
         if self.state_change:
-            await self.async_handle_state_change(state, options)
+            await self.async_handle_state_change(
+                state, options, window_open=window_open
+            )
         if self.cover_state_change:
-            await self.async_handle_cover_state_change(state)
+            await self.async_handle_cover_state_change(
+                state, options, window_open=window_open
+            )
         if self.first_refresh:
-            await self.async_handle_first_refresh(state, options)
+            await self.async_handle_first_refresh(
+                state, options, window_open=window_open
+            )
         if self.timed_refresh:
-            await self.async_handle_timed_refresh(options)
+            await self.async_handle_timed_refresh(options, window_open=window_open)
 
         normal_cover = self.normal_cover_state.cover
         start, end = await self._async_solar_times(normal_cover)
-        state = int(round(state))
+        # Re-read the safety contact after every awaited handler. A door can
+        # open mid-cycle; publishing the stale calculated value for even one
+        # coordinator update lets an echo automation command that unsafe
+        # target before the queued refresh repairs it.
+        window_open = self.is_window_open
+        state = self.get_effective_state(
+            calculated_state, options, window_open=window_open
+        )
         return AdaptiveCoverData(
             climate_mode_toggle=self.switch_mode,
             states={
@@ -766,7 +867,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                 "sun_motion": bool(normal_cover.valid),
                 "manual_override": self.manager.binary_cover_manual,
                 "manual_list": self.manager.manual_controlled,
-                "explanation": "window_open" if self.is_window_open else "auto",
+                "explanation": "window_open" if window_open else "auto",
             },
             attributes={
                 "default": options.get(CONF_DEFAULT_HEIGHT),
@@ -781,20 +882,47 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             },
         )
 
-    async def async_handle_state_change(self, state: int, options):
+    async def async_handle_state_change(
+        self, state: int, options, *, window_open: bool = False
+    ):
         """Handle state change from tracked entities."""
-        if self.control_toggle:
+        if window_open or self.is_window_open:
+            await self._async_enforce_window_interlock(options)
+        elif not self._switches_restored:
+            self.logger.debug("State change deferred: switches not yet restored")
+        elif self.control_toggle:
             for cover in self.entities:
-                await self.async_handle_call_service(cover, state, options)
+                try:
+                    await self.async_handle_call_service(cover, state, options)
+                except CoverCommandError:
+                    self.logger.error(
+                        "Adaptive drive failed for %s; continuing with remaining covers",
+                        cover,
+                        exc_info=True,
+                    )
         else:
             self.logger.debug("State change but control toggle is off")
         self.state_change = False
         self.logger.debug("State change handled")
 
-    async def async_handle_cover_state_change(self, state: int):
+    async def async_handle_cover_state_change(
+        self,
+        state: int,
+        options,
+        *,
+        window_open: bool = False,
+    ):
         """Handle state change from assigned covers."""
-        if self._manual_toggle is None or not self._switches_restored:
+        if window_open or self.is_window_open:
+            # A cover moving away from the safe target while a door/window is
+            # open is a contested interlock, not a user preference. Never
+            # retire the safety rule by latching manual override; immediately
+            # reassert the safe target instead.
+            await self._async_enforce_window_interlock(options)
+        elif not self._switches_restored:
             # Switches have not restored yet; do not consume command-tracking.
+            pass
+        elif self._manual_toggle is None:
             pass
         elif self.manual_toggle and self.control_toggle:
             self.manager.handle_state_change(
@@ -821,14 +949,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         self.cover_state_change = False
         self.logger.debug("Cover state change handled")
 
-    async def async_handle_first_refresh(self, state: int, options):
+    async def async_handle_first_refresh(
+        self, state: int, options, *, window_open: bool = False
+    ):
         """Handle first refresh."""
+        if window_open or self.is_window_open:
+            await self._async_enforce_window_interlock(options)
+            # Keep first_refresh armed until switch restoration completes so
+            # the normal startup drive is not lost if the door closes first.
+            if self._switches_restored:
+                self.first_refresh = False
+            return
         if not self._switches_restored:
             self.logger.debug("First refresh deferred: switches not yet restored")
-            return
-        if self.is_window_open:
-            await self._async_drive_to_max_open(options)
-            self.first_refresh = False
             return
         if self.control_toggle:
             for cover in self.entities:
@@ -838,16 +971,24 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     if self.manager.is_cover_manual(cover):
                         self._log_manual_skip(cover, state)
                         continue
-                    await self.async_set_position(cover, state)
+                    try:
+                        await self.async_set_position(cover, state)
+                    except CoverCommandError:
+                        self.logger.error(
+                            "Startup drive failed for %s; continuing with "
+                            "remaining covers",
+                            cover,
+                            exc_info=True,
+                        )
         else:
             self.logger.debug("First refresh but control toggle is off")
         self.first_refresh = False
         self.logger.debug("First refresh handled")
 
-    async def async_handle_timed_refresh(self, options):
+    async def async_handle_timed_refresh(self, options, *, window_open: bool = False):
         """Handle timed refresh."""
-        if self.is_window_open:
-            await self._async_drive_to_max_open(options)
+        if window_open or self.is_window_open:
+            await self._async_enforce_window_interlock(options)
             self.timed_refresh = False
             return
         self.logger.debug(
@@ -856,14 +997,21 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         )
         if self.control_toggle:
             for cover in self.entities:
-                await self.async_set_manual_position(
-                    cover,
-                    (
-                        inverse_state(options.get(CONF_SUNSET_POS))
-                        if self._inverse_state
-                        else options.get(CONF_SUNSET_POS)
-                    ),
-                )
+                try:
+                    await self.async_set_manual_position(
+                        cover,
+                        (
+                            inverse_state(options.get(CONF_SUNSET_POS))
+                            if self._inverse_state
+                            else options.get(CONF_SUNSET_POS)
+                        ),
+                    )
+                except CoverCommandError:
+                    self.logger.error(
+                        "Timed drive failed for %s; continuing with remaining covers",
+                        cover,
+                        exc_info=True,
+                    )
         else:
             self.logger.debug("Timed refresh but control toggle is off")
         self.timed_refresh = False
@@ -902,23 +1050,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
     def is_window_open(self) -> bool:
         """Return True if any configured window/door is treated as open.
 
-        Reports True when any tracked window_entity currently reads "on",
-        OR when the most recent "on" was less than `window_open_hold`
-        seconds ago. The hold latches over brief "off" flickers from
-        flaky contact sensors so the cover stays at max until the sensor
-        has been continuously "off" for the full hold window. Set
-        `window_open_hold` to 0 to disable the latch.
+        A safety contact is closed only when Home Assistant explicitly reports
+        "off". Missing, unknown, and unavailable contacts fail safe as open.
+        After every transition to an explicit "off", the hold keeps the
+        interlock active for `window_open_hold` seconds to absorb flaky contact
+        reports. Set `window_open_hold` to 0 to disable only that close hold.
         """
-        now = time.monotonic()
-        any_on = False
-        for entity_id in getattr(self, "window_entities", []) or []:
+        window_entities = getattr(self, "window_entities", []) or []
+        if not window_entities:
+            return False
+        for entity_id in window_entities:
             state = self.hass.states.get(entity_id)
-            if state is not None and state.state == "on":
-                any_on = True
-                break
-        if any_on:
-            self._last_window_open_ts = now
-            return True
+            if state is None or state.state != "off":
+                return True
+        now = time.monotonic()
         if (
             self._last_window_open_ts is not None
             and self.window_open_hold > 0
@@ -927,18 +1072,42 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             return True
         return False
 
+    def get_effective_state(
+        self,
+        calculated_state: int,
+        options,
+        *,
+        window_open: bool | None = None,
+    ) -> int:
+        """Return the single target exposed to callers and managed covers."""
+        if window_open is None:
+            window_open = self.is_window_open
+        if window_open:
+            return self._window_open_target(options)
+        return int(round(calculated_state))
+
     def _window_open_target(self, options) -> int:
         """Position to drive covers to when window is open.
 
-        Uses the configured max position if apply_max_position is enabled,
+        Uses a configured maximum as the hardware-safe opening limit;
         otherwise drives fully open (100). Honors inverse_state.
         """
         max_pos = options.get(CONF_MAX_POSITION)
-        apply_max = options.get(CONF_ENABLE_MAX_POSITION, False)
-        target = max_pos if apply_max and max_pos is not None else 100
+        target = max_pos if max_pos is not None else 100
         if self._inverse_state:
             target = inverse_state(target)
-        return target
+        return int(round(target))
+
+    async def _async_enforce_window_interlock(self, options) -> None:
+        """Enforce safety without making coordinator data unavailable."""
+        try:
+            await self._async_drive_to_max_open(options)
+        except CoverCommandError:
+            self.logger.error(
+                "Window/door interlock could not drive every cover; the "
+                "calculated safety state remains available",
+                exc_info=True,
+            )
 
     async def _async_drive_to_max_open(self, options) -> None:
         """Drive every cover in this entry to the window-open target."""
@@ -948,8 +1117,18 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             getattr(self, "window_entities", []),
             target,
         )
+        first_error: CoverCommandError | None = None
         for cover in self.entities:
-            await self.async_set_manual_position(cover, target)
+            try:
+                await self.async_set_manual_position(cover, target)
+            except CoverCommandError as err:
+                # One unavailable motor must not prevent later covers in the
+                # same doorway from receiving the safety command. Preserve
+                # observability by re-raising after every cover was attempted.
+                if first_error is None:
+                    first_error = err
+        if first_error is not None:
+            raise first_error
 
     async def async_set_position(self, entity, state: int):
         """Call service to set cover position."""
@@ -957,6 +1136,19 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
 
     async def async_set_manual_position(self, entity, state):
         """Call service to set cover position."""
+        # Re-resolve the safety target at the final dispatch boundary. A door
+        # can open after an update cycle snapshots its inputs but before a
+        # button, switch, or normal adaptive path reaches this method; no
+        # caller is allowed to send that stale closing target.
+        if self.is_window_open:
+            state = self._window_open_target(self.config_entry.options)
+        if self.wait_for_target.get(entity) and self.target_call.get(entity) == state:
+            self.logger.debug(
+                "Target %s is already in flight for %s; suppressing duplicate command",
+                state,
+                entity,
+            )
+            return
         if self.check_position(entity, state):
             service = SERVICE_SET_COVER_POSITION
             service_data = {}
@@ -978,8 +1170,13 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             )
             self.logger.debug("Run %s with data %s", service, service_data)
             try:
-                await self.hass.services.async_call(COVER_DOMAIN, service, service_data)
-            except Exception:
+                async with asyncio.timeout(self._COVER_SERVICE_TIMEOUT_S):
+                    await self.hass.services.async_call(
+                        COVER_DOMAIN, service, service_data, blocking=True
+                    )
+                if self.wait_for_target.get(entity):
+                    self._schedule_command_timeout(entity, state)
+            except Exception as err:
                 # Roll back rather than reorder. The tracking has to be in
                 # place before the await, because HA can deliver the resulting
                 # state-change event while we are suspended here. But if the
@@ -995,7 +1192,7 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
                     state,
                     exc_info=True,
                 )
-                raise
+                raise CoverCommandError(f"Failed to drive {entity} to {state}") from err
 
     def _update_options(self, options):
         """Update options."""
@@ -1008,6 +1205,20 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
             self.window_entities = [raw_window]
         else:
             self.window_entities = list(raw_window)
+        previous_known = getattr(self, "_window_known_states", {})
+        self._window_known_states = {
+            entity_id: previous_known[entity_id]
+            for entity_id in self.window_entities
+            if entity_id in previous_known
+        }
+        for entity_id in self.window_entities:
+            state = self.hass.states.get(entity_id)
+            if (
+                entity_id not in self._window_known_states
+                and state is not None
+                and state.state in ("on", "off")
+            ):
+                self._window_known_states[entity_id] = state.state
         try:
             self.window_open_hold = int(
                 options.get(CONF_WINDOW_OPEN_HOLD, DEFAULT_WINDOW_OPEN_HOLD)
@@ -1159,7 +1370,8 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Check if position is different as state."""
         position = self._get_current_position(entity)
         if position is not None:
-            return position != state
+            tolerance = settle_tolerance(self.manual_threshold)
+            return abs(position - state) > tolerance
         self.logger.debug(
             "Cannot read position for %s (entity unavailable?); skipping move to %s",
             entity,
@@ -1566,13 +1778,13 @@ class AdaptiveCoverManager:
             if abs(target - new_position) <= tolerance:
                 self.logger.debug(
                     "Cover %s reached integration-commanded target %s "
-                    "(reported %s, tolerance %s); skipping manual-detect",
+                    "(reported %s, tolerance %s); retaining it as the last "
+                    "commanded target and skipping manual-detect",
                     entity_id,
                     target,
                     new_position,
                     tolerance,
                 )
-                target_call.pop(entity_id, None)
                 return
             # Off-target settle: drop the stale command so a later report
             # near the old target cannot be exempted as "commanded".

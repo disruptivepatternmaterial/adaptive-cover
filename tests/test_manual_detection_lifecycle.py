@@ -190,7 +190,7 @@ class TestSlowTraverse:
         assert coordinator.target_call["cover.library_shades"] == 100
 
         # The cover finally settles at the commanded target; the manager
-        # must consume the target instead of marking manual.
+        # must retain the target so duplicate settle reports stay exempt.
         manager = _make_manager()
         settle = StateChangedData(
             "cover.library_shades",
@@ -208,7 +208,7 @@ class TestSlowTraverse:
         )
 
         assert manager.is_cover_manual("cover.library_shades") is False
-        assert "cover.library_shades" not in coordinator.target_call
+        assert coordinator.target_call["cover.library_shades"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -370,11 +370,11 @@ class TestSettleThenDrift:
     """Settle within tolerance is exempt; later drift is a manual move."""
 
     def test_settle_within_tolerance_then_drift_marks_manual(self):
-        """Tolerance settle consumes the target; later drift is manual."""
+        """Tolerance settle retains the target; later drift consumes it."""
         manager = _make_manager()
         target_call = {"cover.library_shades": 100}
 
-        # Settle 2% off target: exempt, target consumed.
+        # Settle 2% off target: exempt, target retained for duplicate reports.
         settle = StateChangedData(
             "cover.library_shades",
             old_state=_cover_state("opening", 90),
@@ -390,7 +390,7 @@ class TestSettleThenDrift:
             target_call=target_call,
         )
         assert manager.is_cover_manual("cover.library_shades") is False
-        assert "cover.library_shades" not in target_call
+        assert target_call["cover.library_shades"] == 100
 
         # Later external move beyond threshold: manual.
         drift = StateChangedData(
@@ -408,6 +408,7 @@ class TestSettleThenDrift:
             target_call=target_call,
         )
         assert manager.is_cover_manual("cover.library_shades") is True
+        assert "cover.library_shades" not in target_call
 
 
 # ---------------------------------------------------------------------------

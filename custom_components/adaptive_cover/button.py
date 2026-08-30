@@ -69,6 +69,7 @@ class AdaptiveCoverButton(
         self._attr_unique_id = f"{unique_id}_{button_name}"
         self._device_id = unique_id
         self._button_name = button_name
+        self._config_entry = config_entry
         self._entities = config_entry.options.get(CONF_ENTITIES, [])
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
@@ -84,12 +85,16 @@ class AdaptiveCoverButton(
 
     async def async_press(self) -> None:
         """Handle the button press."""
+        window_open = self.coordinator.is_window_open
+        target = self.coordinator.get_effective_state(
+            self.coordinator.state,
+            self._config_entry.options,
+            window_open=window_open,
+        )
         for entity in self._entities:
             if self.coordinator.manager.is_cover_manual(entity):
                 _LOGGER.debug("Resetting manual override for: %s", entity)
-                await self.coordinator.async_set_position(
-                    entity, self.coordinator.state
-                )
+                await self.coordinator.async_set_position(entity, target)
                 # Wait for the cover to confirm the commanded position, but
                 # cap the wait at _RESET_TIMEOUT_S seconds so a disconnected
                 # or slow cover doesn't hang the button handler indefinitely.
