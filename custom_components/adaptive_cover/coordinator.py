@@ -25,6 +25,7 @@ from homeassistant.core import (
     State,
     callback,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -164,7 +165,7 @@ class AdaptiveCoverData:
     attributes: dict
 
 
-class CoverCommandError(RuntimeError):
+class CoverCommandError(HomeAssistantError):
     """Raised when Home Assistant cannot dispatch a cover command."""
 
 

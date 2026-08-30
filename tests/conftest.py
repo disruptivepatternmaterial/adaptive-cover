@@ -292,6 +292,7 @@ _mod(
     callback=lambda f: f,
     split_entity_id=lambda entity: entity.split(".", 1),
 )
+_mod("homeassistant.exceptions", HomeAssistantError=RuntimeError)
 _mod("homeassistant.data_entry_flow", FlowResult=dict)
 
 

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.adaptive_cover.button import AdaptiveCoverButton
 from custom_components.adaptive_cover.coordinator import (
@@ -19,6 +20,11 @@ from custom_components.adaptive_cover.switch import AdaptiveCoverSwitch
 def _run(coro):
     """Run async test helpers without pytest-asyncio."""
     return asyncio.get_event_loop().run_until_complete(coro)
+
+
+def test_cover_command_error_is_home_assistant_native() -> None:
+    """Entity actions must surface operational failures through HA's API."""
+    assert issubclass(CoverCommandError, HomeAssistantError)
 
 
 def _coordinator() -> MagicMock:
