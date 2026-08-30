@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.18](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.18)
+**Current release:** [v0.3.19](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.19)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.18"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.19"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 | Safety smoke test | Open the pano door → every managed shade drives to the safe open target and stays there until the door reads closed for the full hold |
@@ -62,6 +62,16 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.19 — Cover command failures use Home Assistant's error type
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- A failed cover command now raises `HomeAssistantError` rather than a bare `RuntimeError`, so
+  Home Assistant surfaces the failure to the user through its normal error path instead of
+  logging it as an unexpected traceback. This is the
+  [documented contract](https://developers.home-assistant.io/docs/creating_component_index/)
+  for an integration reporting an operational failure.
 
 ### v0.3.18 — Window/door interlock is now authoritative
 

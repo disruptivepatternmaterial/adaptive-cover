@@ -4,6 +4,20 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.19] — 2026-08-29
+
+### Fixed
+
+- **A failed cover command raised a bare `RuntimeError`.** Home Assistant treats
+  an unhandled non-`HomeAssistantError` exception as an internal defect: it is
+  logged as an unexpected traceback rather than reported to the user as an
+  operational failure. `CoverCommandError` now derives from
+  `homeassistant.exceptions.HomeAssistantError`, which is the documented
+  contract for an integration surfacing a failure it understands, so a dead
+  motor during a safety drive reads as a cover problem instead of an
+  integration crash. The unguarded import is verified against real installed
+  Core by `tests/test_ha_api_contract.py`.
+
 ## [0.3.18] — 2026-08-29
 
 ### Fixed
