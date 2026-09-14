@@ -25,6 +25,24 @@ CLOUD_SUNNY_COVERAGE = 35
 CLOUD_OVERCAST_COVERAGE = 65
 CLOUD_VETO_COVERAGE = 90
 
+# Degrees of deadband around every seasonal temperature threshold. Summer and
+# winter select positions at opposite ends of the cover's travel, so a bare
+# `>` against a live sensor turns ordinary dither into full-travel motor
+# cycles: a 0.68 degree wiggle across a 65 degree outdoor threshold drove every
+# shade in a ten-entry install open and shut twice inside seven minutes
+# (production, 2026-09-13), 6-21 times a day for the preceding week. A season
+# now has to be entered and left across opposite edges of this band, and inside
+# the band the previous season holds.
+SEASON_TEMP_HYSTERESIS = 1.0
+
+# Solar elevation below which today's forecast high stops arguing for summer.
+# Predictive heat exists to engage summer "before the room heats up"; once the
+# sun is this low the forecast heat is behind us, not ahead, and a high
+# recorded hours ago was holding shades shut through the last hour of daylight.
+# Measured heat is unaffected: a room that is genuinely too warm still reports
+# summer at any elevation.
+PREDICTIVE_HEAT_MIN_ELEVATION = 15.0
+
 
 @dataclass
 class AdaptiveGeneralCover(ABC):
@@ -274,6 +292,41 @@ class ClimateCoverData:
     _use_lux: bool
     _use_irradiance: bool
     cloud_coverage_entity: str | None = None
+    # Season selected on the previous update, so a threshold can hold the
+    # season it already chose instead of re-deciding from scratch every cycle.
+    # None on the first update after a restart, which reads as "no season to
+    # hold" and evaluates every threshold at its nominal edge.
+    previous_season: str | None = None
+    # Solar elevation for this update, used to decide whether today's forecast
+    # high is still ahead of us. None disables the check rather than guessing.
+    sun_elevation: float | None = None
+
+    def _still_above(self, value: float, threshold: float, held: bool) -> bool:
+        """``value > threshold``, made sticky once the season already holds.
+
+        Entry keeps the documented threshold exactly; only leaving costs a
+        further ``SEASON_TEMP_HYSTERESIS`` degrees. A plain band around the
+        threshold would have been symmetrical but opens a gap where neither
+        season applies, and "neither" falls through to anti-glare geometry --
+        closing covers in the very conditions this is meant to stop.
+        """
+        edge = threshold - SEASON_TEMP_HYSTERESIS if held else threshold
+        return value > edge
+
+    def _still_below(self, value: float, threshold: float, held: bool) -> bool:
+        """``value < threshold``, made sticky once the season already holds."""
+        edge = threshold + SEASON_TEMP_HYSTERESIS if held else threshold
+        return value < edge
+
+    @property
+    def _held_summer(self) -> bool:
+        """Whether summer was the season chosen on the previous update."""
+        return self.previous_season == "summer"
+
+    @property
+    def _held_winter(self) -> bool:
+        """Whether winter was the season chosen on the previous update."""
+        return self.previous_season == "winter"
 
     @property
     def outside_temperature(self):
@@ -363,7 +416,9 @@ class ClimateCoverData:
         band, because that is the whole point of the predictive check.
         """
         if self.temp_low is not None and self.get_current_temperature is not None:
-            is_it = self.get_current_temperature < self.temp_low
+            is_it = self._still_below(
+                self.get_current_temperature, self.temp_low, self._held_winter
+            )
         else:
             is_it = False
 
@@ -377,9 +432,12 @@ class ClimateCoverData:
             return False
 
         self.logger.debug(
-            "is_winter(): current_temperature < temp_low: %s < %s = %s",
+            "is_winter(): current_temperature %s vs temp_low %s "
+            "(held_winter=%s, hysteresis=%s) -> %s",
             self.get_current_temperature,
             self.temp_low,
+            self._held_winter,
+            SEASON_TEMP_HYSTERESIS,
             is_it,
         )
         return is_it
@@ -400,7 +458,11 @@ class ClimateCoverData:
         if self.outside_temperature is None:
             return False
         try:
-            return float(self.outside_temperature) > self.temp_summer_outside
+            return self._still_above(
+                float(self.outside_temperature),
+                self.temp_summer_outside,
+                self._held_summer,
+            )
         except (TypeError, ValueError):
             return False
 
@@ -410,23 +472,44 @@ class ClimateCoverData:
         if self.temp_high is None or self.get_current_temperature is None:
             return False
 
-        already_hot_inside = self.get_current_temperature > self.temp_high
+        already_hot_inside = self._still_above(
+            self.get_current_temperature, self.temp_high, self._held_summer
+        )
 
         predictive_heat = False
         max_forecast = getattr(self, "max_forecast_temp", None)
         if max_forecast is not None and self.temp_summer_outside is not None:
             predictive_heat = max_forecast > (self.temp_summer_outside + 2.0)
+        # A forecast high only argues for summer while that heat is still
+        # ahead. After the sun drops this low it cannot deliver it, and the
+        # reading becomes a fact about a peak that has already passed.
+        if (
+            predictive_heat
+            and self.sun_elevation is not None
+            and self.sun_elevation < PREDICTIVE_HEAT_MIN_ELEVATION
+        ):
+            self.logger.debug(
+                "is_summer(): forecast high %s ignored; sun elevation %s is "
+                "below %s so today's heat is behind us, not ahead",
+                max_forecast,
+                self.sun_elevation,
+                PREDICTIVE_HEAT_MIN_ELEVATION,
+            )
+            predictive_heat = False
 
         is_it = (already_hot_inside or predictive_heat) and self.outside_high
 
         self.logger.debug(
             "is_summer(): already_hot_inside=%s predictive_heat=%s "
-            "(max_forecast=%s, summer_outside_threshold=%s) outside_high=%s -> %s",
+            "(max_forecast=%s, summer_outside_threshold=%s, sun_elevation=%s) "
+            "outside_high=%s held_summer=%s -> %s",
             already_hot_inside,
             predictive_heat,
             max_forecast,
             self.temp_summer_outside,
+            self.sun_elevation,
             self.outside_high,
+            self._held_summer,
             is_it,
         )
         return is_it

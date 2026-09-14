@@ -1493,6 +1493,11 @@ class AdaptiveDataUpdateCoordinator(DataUpdateCoordinator[AdaptiveCoverData]):
         """Update climate mode data and control method."""
         climate = ClimateCoverData(*self.get_climate_data(options))
         climate.max_forecast_temp = self._max_forecast_temp
+        # Read before control_method is reset below: the seasonal thresholds
+        # are sticky, and they need the season this coordinator last settled
+        # on to know which edge of the deadband applies.
+        climate.previous_season = self.control_method
+        climate.sun_elevation = cover_data.sol_elev
         # Construct once, reuse for both state and climate_data to avoid
         # running the full decision tree twice per update cycle.
         climate_cover = ClimateCoverState(cover_data, climate)

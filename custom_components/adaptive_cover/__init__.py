@@ -16,6 +16,7 @@ from .const import (
     CONF_END_ENTITY,
     CONF_ENTITIES,
     CONF_OUTSIDE_THRESHOLD,
+    CONF_OUTSIDETEMP_ENTITY,
     CONF_PRESENCE_ENTITY,
     CONF_START_ENTITY,
     CONF_TEMP_ENTITY,
@@ -72,36 +73,50 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def tracked_entities(entry: ConfigEntry) -> list[str]:
+    """Return every entity whose state change must refresh the coordinator.
+
+    An input that is read during an update but missing from this list still
+    yields correct values -- it is re-read live -- but nothing schedules the
+    update, so the cover reacts only when some *other* tracked entity happens
+    to change. The outdoor temperature sensor sat in exactly that position,
+    despite deciding `is_summer` and, with the Outside Temperature switch on,
+    supplying the current temperature outright.
+    """
+    # window_entity may be a single string (legacy single-select) or a list
+    # (modern multi-select). Always normalize to a list so the rest of the
+    # coordinator can treat them uniformly.
+    raw_window = entry.options.get(CONF_WINDOW_ENTITY) or []
+    window_entities = [raw_window] if isinstance(raw_window, str) else list(raw_window)
+
+    entities = ["sun.sun"]
+    for entity in [
+        entry.options.get(CONF_TEMP_ENTITY),
+        entry.options.get(CONF_OUTSIDETEMP_ENTITY),
+        entry.options.get(CONF_PRESENCE_ENTITY),
+        entry.options.get(CONF_WEATHER_ENTITY),
+        entry.options.get(CONF_CLOUD_COVERAGE_ENTITY),
+        entry.options.get(CONF_START_ENTITY),
+        entry.options.get(CONF_END_ENTITY),
+    ]:
+        if entity is not None:
+            entities.append(entity)
+    entities.extend(e for e in window_entities if e)
+    # One entity can fill two roles -- the same sensor as inside and outside
+    # temperature, say. async_track_state_change_event appends a callback per
+    # occurrence, so a duplicate would refresh the coordinator twice per state
+    # change. dict.fromkeys keeps first-seen order for reproducible setup.
+    return list(dict.fromkeys(entities))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Adaptive Cover from a config entry."""
 
     hass.data.setdefault(DOMAIN, {})
 
     coordinator = AdaptiveDataUpdateCoordinator(hass, entry)
-    _temp_entity = entry.options.get(CONF_TEMP_ENTITY)
-    _presence_entity = entry.options.get(CONF_PRESENCE_ENTITY)
-    _weather_entity = entry.options.get(CONF_WEATHER_ENTITY)
-    _cloud_entity = entry.options.get(CONF_CLOUD_COVERAGE_ENTITY)
-    # window_entity may be a string (legacy single) or list (multi-select).
-    _raw_window = entry.options.get(CONF_WINDOW_ENTITY) or []
-    _window_entities = (
-        [_raw_window] if isinstance(_raw_window, str) else list(_raw_window)
-    )
     _cover_entities = entry.options.get(CONF_ENTITIES, [])
-    _start_time_entity = entry.options.get(CONF_START_ENTITY)
-    _end_time_entity = entry.options.get(CONF_END_ENTITY)
-    _entities = ["sun.sun"]
-    for entity in [
-        _temp_entity,
-        _presence_entity,
-        _weather_entity,
-        _cloud_entity,
-        _start_time_entity,
-        _end_time_entity,
-    ]:
-        if entity is not None:
-            _entities.append(entity)
-    _entities.extend(e for e in _window_entities if e)
+    _entities = tracked_entities(entry)
 
     _LOGGER.debug("Setting up entry %s", entry.data.get("name"))
 
