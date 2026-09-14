@@ -4,6 +4,44 @@ All notable changes to this fork are documented here. This fork uses `0.3.x` ver
 
 ---
 
+## [0.3.20] — 2026-09-13
+
+### Fixed
+
+- **A fraction of a degree of sensor noise cycled every cover in the house.**
+  Summer and winter choose opposite ends of the travel — winter with the sun in
+  the window returns fully open, summer runs anti-glare geometry that bottoms
+  out near fully closed on a low sun — and both were selected by a bare `>`
+  against a live temperature sensor. On a ten-entry install
+  `sensor.outside_average_temperature` moved 64.94 → 65.62 → 65.12 across a
+  65° threshold and drove every motorised shade open and shut twice inside
+  seven minutes; the recorder shows 6–21 such season flips a day, every day,
+  for the preceding week. Each season is now entered at its documented
+  threshold and left only once the reading clears it by `SEASON_TEMP_HYSTERESIS`
+  (1°), with the previous season holding inside the band. Entry behaviour is
+  unchanged, so no existing install engages a season later than it used to.
+
+- **A forecast recorded in the morning held covers shut at sunset.** Predictive
+  summer detection is documented as engaging summer "before the room heats up",
+  but nothing scoped it to the part of the day when that heat was still ahead.
+  With today's high of 72° against a 65° outdoor threshold, summer stayed armed
+  at 18:37 with the sun at 9° of elevation and the outdoor temperature falling
+  back through the threshold — so west-facing shades ran anti-glare geometry
+  down to 1–5% on a 65°, overcast evening. The forecast is now ignored below
+  `PREDICTIVE_HEAT_MIN_ELEVATION` (15°). Measured heat is untouched: a room
+  above `temp_high` still reports summer at any sun position, and an absent
+  elevation reading is not treated as a low sun.
+
+- **The outdoor temperature sensor triggered no update.** It decides
+  `is_summer`, and with the Outside Temperature switch on it supplies the
+  current temperature outright, yet it was missing from the state-change
+  listener. Values were never stale — they are re-read each cycle — but nothing
+  scheduled the cycle, so covers responded to outdoor temperature only when
+  some other tracked entity happened to publish. An entry configured with an
+  outdoor sensor and no indoor one would not respond to it at all. The tracked
+  set is now built by `tracked_entities()` and deduplicated, so one entity
+  serving two roles no longer refreshes the coordinator twice per change.
+
 ## [0.3.19] — 2026-08-29
 
 ### Fixed

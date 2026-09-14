@@ -8,7 +8,7 @@
 Sun-tracking cover control for Home Assistant: vertical blinds, awnings, and venetian tilts with optional climate-aware strategies.
 
 **This repo:** [disruptivepatternmaterial/adaptive-cover](https://github.com/disruptivepatternmaterial/adaptive-cover)
-**Current release:** [v0.3.19](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.19)
+**Current release:** [v0.3.20](https://github.com/disruptivepatternmaterial/adaptive-cover/releases/tag/v0.3.20)
 **HACS name:** `Adaptive Cover (NET Fork)`
 **Integration domain:** `adaptive_cover`
 
@@ -41,7 +41,7 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 | Step | Command / action |
 |------|------------------|
 | Pull latest | HACS → Update **Adaptive Cover (NET Fork)** |
-| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.19"` |
+| Verify version | `/config/custom_components/adaptive_cover/manifest.json` → `"version": "0.3.20"` |
 | Restart | Restart Home Assistant |
 | Smoke test | Manually hold a shade closed → restart HA → shade should **not** reopen on first refresh |
 | Safety smoke test | Open the pano door → every managed shade drives to the safe open target and stays there until the door reads closed for the full hold |
@@ -62,6 +62,19 @@ Copy `custom_components/adaptive_cover/` to `/config/custom_components/` and res
 ---
 
 ## NET Fork changes (changelog)
+
+### v0.3.20 — Covers stop cycling on temperature noise
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
+- Summer and winter are now left across a 1° deadband instead of a bare threshold comparison.
+  A 0.68° wobble across a 65° outdoor threshold had been driving every shade in a ten-entry
+  install open and shut twice in seven minutes, 6–21 times a day.
+- Today's forecast high no longer argues for summer once the sun is below 15° of elevation,
+  so a high recorded that morning stops holding covers shut through the last hour of
+  daylight. Heat you can actually measure still engages summer at any sun position.
+- The outdoor temperature sensor is now tracked for state changes. It decided `is_summer`
+  but scheduled no update, so covers reacted to it only when another entity happened to change.
 
 ### v0.3.19 — Cover command failures use Home Assistant's error type
 
@@ -360,7 +373,9 @@ Split into presence and no-presence strategies:
 - Winter + sun in window → fully open
 - Otherwise → default position
 
-**Predictive summer detection:** when a weather entity is configured, `weather.get_forecasts` is called to retrieve today's forecast high. If the forecast exceeds the outdoor threshold by 2°, summer mode activates before the room heats up.
+**Predictive summer detection:** when a weather entity is configured, `weather.get_forecasts` is called to retrieve today's forecast high. If the forecast exceeds the outdoor threshold by 2°, summer mode activates before the room heats up. Because that check is about heat still to come, it is ignored once the sun drops below 15° of elevation — by then the day's heat is behind you, and a forecast recorded that morning would otherwise hold covers shut through the last hour of daylight. Heat you can actually measure is never gated this way: a room above the high threshold reports summer at any sun position.
+
+**Seasonal hysteresis:** summer and winter select opposite ends of the cover's travel, so a temperature sensor dithering across a threshold would otherwise drive a full open/close cycle every time it wobbled. Each season is entered at its configured threshold and left only once the reading clears that threshold by 1°; inside the band the current season holds.
 
 ### Window/door safety
 
